@@ -1,0 +1,264 @@
+:root {
+  color-scheme: dark;
+  --bg: #020617;
+  --panel: rgba(15, 23, 42, 0.82);
+  --panel-strong: rgba(15, 23, 42, 0.96);
+  --stroke: rgba(148, 163, 184, 0.18);
+  --text: #e5f3ff;
+  --muted: #94a3b8;
+  --cyan: #38bdf8;
+  --green: #22c55e;
+  --red: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.20), transparent 34rem),
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.10), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+}
+
+.login-shell {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, rgba(2, 6, 23, .90), rgba(15, 23, 42, .96)),
+    radial-gradient(circle at 50% 0%, rgba(56, 189, 248, .30), transparent 36rem);
+}
+
+.cyber-grid {
+  position: absolute;
+  inset: 0;
+  opacity: .25;
+  background-image:
+    linear-gradient(rgba(56, 189, 248, .20) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, .20) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at center, black, transparent 75%);
+}
+
+.login-card {
+  width: min(460px, 100%);
+  position: relative;
+  z-index: 1;
+  padding: 18px;
+  color: var(--text) !important;
+  background: rgba(15, 23, 42, .88) !important;
+  border: 1px solid rgba(56, 189, 248, .28);
+  border-radius: 18px !important;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .55), 0 0 64px rgba(56, 189, 248, .12) !important;
+  backdrop-filter: blur(18px);
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  background:
+    radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.14), transparent 28rem),
+    radial-gradient(circle at 80% 0%, rgba(34, 197, 94, 0.10), transparent 28rem),
+    var(--bg);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 24px;
+  background: rgba(2, 6, 23, .92);
+  border-right: 1px solid var(--stroke);
+  backdrop-filter: blur(20px);
+}
+
+.main-panel {
+  min-width: 0;
+  padding: 26px;
+}
+
+.page-header,
+.glass-panel,
+.operator-card,
+.metric-card {
+  color: var(--text) !important;
+  background: var(--panel) !important;
+  border: 1px solid var(--stroke);
+  border-radius: 12px !important;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .24) !important;
+  backdrop-filter: blur(18px);
+}
+
+.page-header {
+  padding: 22px;
+}
+
+.glass-panel {
+  padding: 22px;
+}
+
+.operator-card {
+  padding: 14px;
+}
+
+.metric-card {
+  position: relative;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.metric-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-top: 3px solid var(--accent);
+  opacity: .9;
+}
+
+.metric-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 50%);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent), transparent 90%);
+}
+
+.nav-button {
+  justify-content: flex-start !important;
+  color: #cbd5e1 !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  padding: 11px 14px !important;
+  text-transform: none !important;
+}
+
+.nav-button.active,
+.nav-button:hover {
+  color: white !important;
+  border-color: rgba(56, 189, 248, .32) !important;
+  background: rgba(14, 165, 233, .14) !important;
+}
+
+.logout-button {
+  color: #fecaca !important;
+  border: 1px solid rgba(239, 68, 68, .28) !important;
+  border-radius: 10px !important;
+}
+
+.primary-action {
+  color: #001018 !important;
+  font-weight: 900 !important;
+  background: linear-gradient(135deg, #38bdf8, #22c55e) !important;
+}
+
+.agent-button {
+  width: 100%;
+  padding: 12px !important;
+  justify-content: flex-start !important;
+  color: #dbeafe !important;
+  border: 1px solid rgba(148, 163, 184, .18) !important;
+  border-radius: 10px !important;
+  background: rgba(15, 23, 42, .72) !important;
+  text-transform: none !important;
+}
+
+.agent-button.active {
+  border-color: rgba(56, 189, 248, .55) !important;
+  background: rgba(14, 165, 233, .18) !important;
+}
+
+.feed-item {
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, .16);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, .26);
+}
+
+.account-panel {
+  max-width: 980px;
+}
+
+.cyber-progress {
+  height: 8px !important;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .18) !important;
+}
+
+.cyber-progress .MuiLinearProgress-bar {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8, #22c55e) !important;
+}
+
+.MuiTableCell-root {
+  color: #dbeafe !important;
+  border-bottom-color: rgba(148, 163, 184, .16) !important;
+}
+
+.MuiTableHead-root .MuiTableCell-root {
+  color: #7dd3fc !important;
+  font-weight: 800 !important;
+  background: rgba(2, 6, 23, .28);
+}
+
+.MuiDialog-paper {
+  color: var(--text) !important;
+  background: var(--panel-strong) !important;
+  border: 1px solid var(--stroke);
+}
+
+.MuiInputBase-root,
+.MuiOutlinedInput-root {
+  color: var(--text) !important;
+}
+
+.MuiInputLabel-root {
+  color: var(--muted) !important;
+}
+
+.MuiOutlinedInput-notchedOutline {
+  border-color: rgba(148, 163, 184, .34) !important;
+}
+
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline,
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: var(--cyan) !important;
+}
+
+.MuiPaper-root {
+  background-image: none !important;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+  }
+
+  .main-panel {
+    padding: 16px;
+  }
+}

@@ -1,0 +1,4 @@
+psutil
+requests
+py-cpuinfo
+pywin32; platform_system == "Windows"

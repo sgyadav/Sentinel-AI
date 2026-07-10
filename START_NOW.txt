@@ -1,0 +1,68 @@
+# SENTINEL AI - START NOW
+
+## Step 1: Start Backend
+
+Open Command Prompt:
+```
+cd "C:\Users\Administrator\Desktop\Sentinel AI\backend"
+python -m uvicorn main:app --port 8000 --reload
+```
+
+Wait for: `Uvicorn running on http://0.0.0.0:8000`
+
+---
+
+## Step 2: Start Frontend  
+
+Open NEW Command Prompt:
+```
+cd "C:\Users\Administrator\Desktop\Sentinel AI\frontend"
+npm run dev
+```
+
+Wait for: `Local: http://localhost:5173`
+
+---
+
+## Step 3: Login
+
+Go to: `http://localhost:5173`
+
+**Username:** admin  
+**Password:** Admin1234
+
+---
+
+## Features Working
+
+✅ **Dashboard** - Real-time metrics  
+✅ **Employees** - Add/Edit/Delete (All CRUD working)  
+✅ **Devices** - Register/Edit/Delete (All CRUD working)  
+✅ **Assignments** - Assign devices to employees  
+✅ **Threats** - Real threat detection  
+
+---
+
+## Organization Registration
+
+On login page click: "Register Organization"
+
+---
+
+## Forgot Password
+
+On login page click: "Forgot Password?"
+
+---
+
+## Real-Time Monitoring
+
+- Dashboard updates every 10 seconds automatically
+- All metrics refresh in real-time
+- Threats update automatically
+
+---
+
+## That's It!
+
+Start the two commands above and you're ready to use SENTINEL AI.

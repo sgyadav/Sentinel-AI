@@ -1,0 +1,109 @@
+# 🚀 SENTINEL AI - START HERE
+
+## ⚡ STEP 1: Start Backend
+
+**Open Command Prompt and type:**
+```
+cd "C:\Users\Administrator\Desktop\Sentinel AI\backend"
+python -m uvicorn main:app --port 8000 --reload
+```
+
+**Wait for message:** `Uvicorn running on http://0.0.0.0:8000`
+
+---
+
+## ⚡ STEP 2: Start Frontend
+
+**Open ANOTHER Command Prompt and type:**
+```
+cd "C:\Users\Administrator\Desktop\Sentinel AI\frontend"
+npm run dev
+```
+
+**Wait for message:** `Local: http://localhost:5173`
+
+---
+
+## ⚡ STEP 3: Open Browser
+
+**Go to:**
+```
+http://localhost:5173
+```
+
+---
+
+## 🔐 LOGIN
+
+```
+Username: admin
+Password: Admin1234
+```
+
+---
+
+## ✅ FEATURES WORKING
+
+### Dashboard Tab
+- Employee count
+- Device count
+- Threats count
+- System status
+
+### Employees Tab
+✅ Add Employee - Click "+ Add Employee" button  
+✅ Delete Employee - Click "Delete" button  
+
+### Devices Tab
+✅ Register Device - Click "+ Register Device" button  
+✅ Delete Device - Click "Delete" button  
+
+---
+
+## 🎯 QUICK TEST
+
+1. Login with admin/Admin1234
+2. Go to "Employees" tab
+3. Click "+ Add Employee"
+4. Fill form:
+   - ID: EMP001
+   - Name: John Doe
+   - Email: john@company.com
+   - Department: IT
+   - Designation: Analyst
+5. Click "Add"
+6. Employee appears in table ✅
+
+---
+
+## 🌐 URLS
+
+```
+Frontend: http://localhost:5173
+Backend:  http://localhost:8000
+API Docs: http://localhost:8000/docs
+```
+
+---
+
+## 🆘 IF IT DOESN'T WORK
+
+### Frontend shows blank white page
+1. Stop both (Ctrl+C)
+2. In frontend folder: `npm cache clean --force`
+3. Then: `npm run dev`
+4. Wait for "Local: http://localhost:5173"
+
+### Backend won't start
+1. Check if port 8000 is free
+2. Try: `netstat -ano | findstr :8000`
+3. If in use, kill it: `taskkill /PID <PID> /F`
+
+### Login fails
+1. Make sure backend is running
+2. Check: http://localhost:8000/health
+3. Use: admin / Admin1234
+
+---
+
+**THAT'S IT! ENJOY SENTINEL AI! 🎉**

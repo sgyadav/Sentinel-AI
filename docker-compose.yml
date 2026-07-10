@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Backend Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: sentinel-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - DATABASE_URL=sqlite:////data/sentinel.db
+      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-this-in-production-minimum-32-chars}
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=480
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
+      - REALTIME_ENABLED=true
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - sentinel-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Service
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: sentinel-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - sentinel-network
+
+  # SQLite Database (for development - use PostgreSQL for production)
+  db:
+    image: alpine:latest
+    container_name: sentinel-db
+    volumes:
+      - ./data:/data
+    networks:
+      - sentinel-network
+    command: sh -c "mkdir -p /data"
+
+networks:
+  sentinel-network:
+    driver: bridge
+    
+volumes:
+  data:
+    driver: local
