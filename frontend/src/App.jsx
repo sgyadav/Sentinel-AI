@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API = axios.create({ 
-  baseURL: 'http://localhost:8000',
+  baseURL: 'https://sentinel-ai-fz5u.onrender.com',
   timeout: 15000 
 });
 
