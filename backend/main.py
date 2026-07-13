@@ -130,6 +130,11 @@ class AssignmentCreate(BaseModel):
     employee_id: str
     device_id: str
 
+
+class AssignmentUpdate(BaseModel):
+    employee_id: str
+    device_id: str
+
 class SettingsUpdate(BaseModel):
     smtp_server: str = ""
     smtp_port: int = 587
@@ -332,16 +337,64 @@ def create_assignment(assign: AssignmentCreate, db = Depends(get_db)):
 def get_assignments(db = Depends(get_db)):
     assignments = db.query(AssignmentDB).all()
     return {
-        "total": len(assignments),
-        "assignments": [
-            {
-                "employee_id": a.employee_id,
-                "device_id": a.device_id,
-                "assigned_date": a.assignment_date.isoformat() if a.assignment_date else None,
-                "is_active": a.is_active
-            }
-            for a in assignments
-        ]
+    "total": len(assignments),
+    "assignments": [
+        {
+            "id": a.id,
+            "employee_id": a.employee_id,
+            "device_id": a.device_id,
+            "assigned_date": a.assignment_date.isoformat() if a.assignment_date else None,
+            "is_active": a.is_active
+        }
+        for a in assignments
+    ]
+}
+
+@app.put("/assignments/{assignment_id}")
+def update_assignment(
+    assignment_id: int,
+    assignment: AssignmentUpdate,
+    db = Depends(get_db)
+):
+    existing = db.query(AssignmentDB).filter(
+        AssignmentDB.id == assignment_id
+    ).first()
+
+    if not existing:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    existing.employee_id = assignment.employee_id
+    existing.device_id = assignment.device_id
+
+    db.commit()
+    db.refresh(existing)
+
+    return {
+        "success": True,
+        "message": "Assignment updated successfully"
+    }
+
+@app.delete("/assignments/{assignment_id}")
+def delete_assignment(
+    assignment_id: int,
+    db = Depends(get_db)
+):
+    assignment = db.query(AssignmentDB).filter(
+        AssignmentDB.id == assignment_id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(
+            status_code=404,
+            detail="Assignment not found"
+        )
+
+    db.delete(assignment)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Assignment deleted successfully"
     }
 
 # ============= THREAT ENDPOINTS =============

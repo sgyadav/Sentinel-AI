@@ -245,24 +245,56 @@ export default function App() {
   };
 
   // ============= DEVICE ASSIGNMENT =============
-  const assignDevice = async () => {
-    if (!assignmentForm.employee_id || !assignmentForm.device_id) {
-      showMsg('error', 'Please select both employee and device');
-      return;
-    }
-    setLoading(true);
-    try {
-      await API.post('/assignments', assignmentForm);
-      showMsg('success', 'Device assigned successfully');
-      setShowAssignment(false);
-      setAssignmentForm({ employee_id: '', device_id: '' });
-      await fetchAllData();
-    } catch (error) {
-      showMsg('error', error.response?.data?.detail || 'Failed to assign device');
-    } finally {
-      setLoading(false);
-    }
-  };
+ const deleteAssignment = async (assignmentId) => {
+  const confirmDelete = window.confirm(
+    "Are you sure you want to delete this assignment?"
+  );
+
+  if (!confirmDelete) return;
+
+  try {
+    await API.delete(`/assignments/${assignmentId}`);
+    showMsg("success", "Assignment deleted successfully");
+    await fetchAllData();
+  } catch (error) {
+    showMsg(
+      "error",
+      error.response?.data?.detail || "Failed to delete assignment"
+    );
+  }
+};
+
+const assignDevice = async () => {
+  if (!assignmentForm.employee_id || !assignmentForm.device_id) {
+    showMsg("error", "Please select both employee and device");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    await API.post("/assignments", assignmentForm);
+
+    showMsg("success", "Device assigned successfully");
+
+    setShowAssignment(false);
+
+    setAssignmentForm({
+      employee_id: "",
+      device_id: ""
+    });
+
+    await fetchAllData();
+
+  } catch (error) {
+    showMsg(
+      "error",
+      error.response?.data?.detail || "Failed to assign device"
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ============= ADMIN SETTINGS =============
   const saveSettings = async () => {
@@ -637,25 +669,67 @@ export default function App() {
 
             <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.08)', borderBottom: '2px solid rgba(59,130,246,0.3)' }}>
-                    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color: '#e0e7ff' }}>Employee ID</th>
-                    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color: '#e0e7ff' }}>Device ID</th>
-                    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color: '#e0e7ff' }}>Assigned Date</th>
-                  </tr>
-                </thead>
+               <thead>
+                <tr style={{ background: 'rgba(255,255,255,0.08)', borderBottom: '2px solid rgba(59,130,246,0.3)' }}>
+    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color: '#e0e7ff' }}>Employee ID</th>
+    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color: '#e0e7ff' }}>Device ID</th>
+    <th style={{ padding: '15px', textAlign: 'left', fontWeight: 'bold', fontSize: '14px', color: '#e0e7ff' }}>Assigned Date</th>
+
+    <th style={{ padding: '15px', textAlign: 'center', fontWeight: 'bold', fontSize: '14px', color: '#e0e7ff' }}>
+      Actions
+    </th>
+  </tr>
+</thead>
                 <tbody>
                   {assignments.length > 0 ? (
                     assignments.map((assign, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: '500', color: '#e0e7ff' }}>{assign.employee_id}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', color: '#cbd5e1' }}>{assign.device_id}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', color: '#cbd5e1' }}>{new Date(assign.assigned_date).toLocaleDateString()}</td>
-                      </tr>
+                     <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+  <td style={{ padding: '15px', fontSize: '14px', fontWeight: '500', color: '#e0e7ff' }}>
+    {assign.employee_id}
+  </td>
+
+  <td style={{ padding: '15px', fontSize: '14px', color: '#cbd5e1' }}>
+    {assign.device_id}
+  </td>
+
+  <td style={{ padding: '15px', fontSize: '14px', color: '#cbd5e1' }}>
+    {new Date(assign.assigned_date).toLocaleDateString()}
+  </td>
+
+  <td style={{ padding: '15px', textAlign: 'center' }}>
+    <button
+      style={{
+        background: '#3b82f6',
+        color: 'white',
+        border: 'none',
+        borderRadius: '5px',
+        padding: '6px 12px',
+        cursor: 'pointer',
+        marginRight: '8px'
+      }}
+    >
+      ✏ Edit
+    </button>
+
+    <button
+  onClick={() => deleteAssignment(assign.id)}
+  style={{
+    background: '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '5px',
+    padding: '6px 12px',
+    cursor: 'pointer'
+  }}
+>
+  🗑 Delete
+</button>
+  </td>
+</tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={3} style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                      <td colSpan={4} style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
                         No assignments. Click "+ Assign Device" to create one.
                       </td>
                     </tr>
