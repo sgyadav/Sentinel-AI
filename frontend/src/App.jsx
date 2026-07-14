@@ -70,6 +70,8 @@ export default function App() {
   });
 
   const [showAssignment, setShowAssignment] = useState(false);
+  const [showEditAssignment, setShowEditAssignment] = useState(false);
+const [editingAssignment, setEditingAssignment] = useState(null);
   const [assignmentForm, setAssignmentForm] = useState({
     employee_id: '',
     device_id: ''
@@ -261,6 +263,38 @@ export default function App() {
       "error",
       error.response?.data?.detail || "Failed to delete assignment"
     );
+  }
+};
+
+const updateAssignment = async () => {
+  if (!editingAssignment) return;
+
+  setLoading(true);
+
+  try {
+    await API.put(
+      `/assignments/${editingAssignment.id}`,
+      assignmentForm
+    );
+
+    showMsg("success", "Assignment updated successfully");
+
+    setShowEditAssignment(false);
+    setEditingAssignment(null);
+
+    setAssignmentForm({
+      employee_id: "",
+      device_id: ""
+    });
+
+    await fetchAllData();
+  } catch (error) {
+    showMsg(
+      "error",
+      error.response?.data?.detail || "Failed to update assignment"
+    );
+  } finally {
+    setLoading(false);
   }
 };
 
@@ -682,8 +716,8 @@ const assignDevice = async () => {
 </thead>
                 <tbody>
                   {assignments.length > 0 ? (
-                    assignments.map((assign, idx) => (
-                     <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    assignments.map((assign) => (
+                     <tr key={assign.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
   <td style={{ padding: '15px', fontSize: '14px', fontWeight: '500', color: '#e0e7ff' }}>
     {assign.employee_id}
   </td>
@@ -697,19 +731,31 @@ const assignDevice = async () => {
   </td>
 
   <td style={{ padding: '15px', textAlign: 'center' }}>
-    <button
-      style={{
-        background: '#3b82f6',
-        color: 'white',
-        border: 'none',
-        borderRadius: '5px',
-        padding: '6px 12px',
-        cursor: 'pointer',
-        marginRight: '8px'
-      }}
-    >
-      ✏ Edit
-    </button>
+   <button
+  onClick={() => {
+    console.log(assign);
+
+    setEditingAssignment(assign);
+
+    setAssignmentForm({
+      employee_id: assign.employee_id,
+      device_id: assign.device_id,
+    });
+
+    setShowEditAssignment(true);
+  }}
+  style={{
+    background: "#3b82f6",
+    color: "white",
+    border: "none",
+    borderRadius: "5px",
+    padding: "6px 12px",
+    cursor: "pointer",
+    marginRight: "8px",
+  }}
+>
+  ✏ Edit
+</button>
 
     <button
   onClick={() => deleteAssignment(assign.id)}
@@ -738,7 +784,118 @@ const assignDevice = async () => {
               </table>
             </div>
 
-            {showAssignment && (
+            {showEditAssignment && editingAssignment && (
+  <div
+    style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "rgba(0,0,0,0.7)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 1000,
+    }}
+  >
+    <div
+      style={{
+        background: "linear-gradient(135deg,#1a1f35,#2d3748)",
+        padding: "30px",
+        borderRadius: "12px",
+        width: "100%",
+        maxWidth: "400px",
+      }}
+    >
+      <h2 style={{ color: "#60a5fa" }}>
+        Edit Assignment
+      </h2>
+
+      <select
+        value={assignmentForm.employee_id}
+        onChange={(e) =>
+          setAssignmentForm({
+  ...assignmentForm,
+  employee_id: e.target.value,
+})
+        }
+        style={{
+          width: "100%",
+          padding: "12px",
+          marginBottom: "15px",
+        }}
+      >
+        <option value="">Select Employee</option>
+
+        {employees.map((emp) => (
+          <option
+            key={emp.employee_id}
+            value={emp.employee_id}
+          >
+            {emp.name} ({emp.employee_id})
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={assignmentForm.device_id}
+        onChange={(e) =>
+         setAssignmentForm({
+  ...assignmentForm,
+  device_id: e.target.value,
+})
+        }
+        style={{
+          width: "100%",
+          padding: "12px",
+          marginBottom: "20px",
+        }}
+      >
+        <option value="">Select Device</option>
+
+        {devices.map((dev) => (
+          <option
+            key={dev.device_id}
+            value={dev.device_id}
+          >
+            {dev.hostname}
+          </option>
+        ))}
+      </select>
+
+      <div style={{ display: "flex", gap: "10px" }}>
+        <button
+  onClick={() => {
+    setShowEditAssignment(false);
+    setEditingAssignment(null);
+
+    setAssignmentForm({
+      employee_id: "",
+      device_id: "",
+    });
+  }}
+>
+  Cancel
+</button>
+
+        <button
+  onClick={async () => {
+    await updateAssignment();
+
+    setShowEditAssignment(false);
+    setEditingAssignment(null);
+
+    await fetchAllData();
+  }}
+>
+  Update
+</button>
+      </div>
+    </div>
+  </div>
+)}
+{showAssignment && (
               <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
                 <div style={{ background: 'linear-gradient(135deg, #1a1f35 0%, #2d3748 100%)', padding: '30px', borderRadius: '12px', width: '100%', maxWidth: '400px', border: '1px solid rgba(59,130,246,0.3)' }}>
                   <h2 style={{ margin: '0 0 20px 0', color: '#60a5fa' }}>Assign Device to Employee</h2>
@@ -758,20 +915,45 @@ const assignDevice = async () => {
                       </option>
                     ))}
                   </select>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => setShowAssignment(false)} style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.1)', color: '#e0e7ff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={() => setShowAssignment(false)}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        background: 'rgba(255,255,255,0.1)',
+                        color: '#e0e7ff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
                       Cancel
                     </button>
-                    <button onClick={assignDevice} disabled={loading || !assignmentForm.employee_id || !assignmentForm.device_id} style={{ flex: 1, padding: '10px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+
+                    <button
+                      onClick={assignDevice}
+                      disabled={loading || !assignmentForm.employee_id || !assignmentForm.device_id}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        background: '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
                       {loading ? 'Assigning...' : 'Assign'}
                     </button>
                   </div>
                 </div>
               </div>
             )}
-          </div>
+                      </div>
         )}
-
         {/* LIVE MONITORING TAB */}
         {activeTab === 'monitoring' && (
           <div>

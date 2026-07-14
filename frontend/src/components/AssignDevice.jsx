@@ -6,17 +6,25 @@ function AssignDevice() {
   const [devices, setDevices] = useState([]);
   const [assignment, setAssignment] = useState({
     employee_id: "",
-    hostname: "",
+    device_id: "",
   });
 
   const loadEmployees = async () => {
-    const response = await api.get("/employee/");
-    setEmployees(response.data);
+    try {
+      const response = await api.get("/employees");
+      setEmployees(response.data.employees || []);
+    } catch (err) {
+      console.error("Load employees error:", err);
+    }
   };
 
   const loadDevices = async () => {
-    const response = await api.get("/device/");
-    setDevices(response.data);
+    try {
+      const response = await api.get("/devices");
+      setDevices(response.data.devices || []);
+    } catch (err) {
+      console.error("Load devices error:", err);
+    }
   };
 
   useEffect(() => {
@@ -26,8 +34,9 @@ function AssignDevice() {
 
   const assign = async () => {
     try {
-      await api.post("/assign-device", assignment);
+      await api.post("/assignments", assignment);
       alert("Device assigned");
+      setAssignment({ employee_id: "", device_id: "" });
     } catch (error) {
       console.log(error);
       alert("Assignment failed");
@@ -68,18 +77,18 @@ function AssignDevice() {
       <br />
 
       <select
-        value={assignment.hostname}
+        value={assignment.device_id}
         onChange={(e) =>
           setAssignment({
             ...assignment,
-            hostname: e.target.value,
+            device_id: e.target.value,
           })
         }
       >
         <option value="">Select Device</option>
 
         {devices.map((device) => (
-          <option key={device.hostname} value={device.hostname}>
+          <option key={device.device_id} value={device.device_id}>
             {device.hostname}
           </option>
         ))}
