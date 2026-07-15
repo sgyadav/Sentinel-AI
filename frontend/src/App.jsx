@@ -554,10 +554,6 @@ export default function App() {
               {loading ? 'Logging in...' : 'LOGIN'}
             </button>
           </form>
-
-          <p style={{ textAlign: 'center', marginTop: '20px', color: '#64748b', fontSize: '12px' }}>
-            Demo Credentials: admin / Admin1234
-          </p>
         </div>
       </div>
     );
