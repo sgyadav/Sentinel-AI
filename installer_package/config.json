@@ -1,0 +1,15 @@
+{
+  "server_url": "http://YOUR_SERVER:8000",
+  "organization": "YourCompany",
+  "agent_id": "GENERATE_NEW",
+  "agent_version": "1.0.0",
+  "heartbeat_interval": 10,
+  "usb_check_interval": 5,
+  "process_check_interval": 30,
+  "max_retries": 3,
+  "retry_delay": 5,
+  "enable_usb_monitoring": true,
+  "enable_process_monitoring": true,
+  "enable_login_monitoring": true,
+  "log_level": "INFO"
+}

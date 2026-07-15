@@ -1,0 +1,103 @@
+
+# SENTINEL AI AGENT - INSTALLATION GUIDE
+
+## System Requirements
+- Windows 10 or later
+- Python 3.8+ (if running from source)
+- Administrator privileges for installation
+
+## Installation Methods
+
+### Method 1: Using Installer (Recommended)
+1. Run `SentinelAgent_Installer.bat` as Administrator
+2. Follow the prompts
+3. Agent will be installed as Windows Service
+4. Service starts automatically with Windows
+
+### Method 2: Manual Installation
+1. Create directory: `C:\Program Files\SentinelAI`
+2. Copy `SentinelAgent.exe` to that directory
+3. Create config at: `C:\ProgramData\SentinelAI\config.json`
+4. Register service:
+   ```
+   sc create SentinelAIAgent binPath= "C:\Program Files\SentinelAI\SentinelAgent.exe"
+   net start SentinelAIAgent
+   ```
+
+## Configuration
+
+Edit `C:\ProgramData\SentinelAI\config.json`:
+
+```json
+{
+  "server_url": "http://your-server:8000",
+  "organization": "Your Company",
+  "heartbeat_interval": 10,
+  "usb_check_interval": 5,
+  "process_check_interval": 30
+}
+```
+
+## Service Management
+
+Start agent:
+```
+net start SentinelAIAgent
+```
+
+Stop agent:
+```
+net stop SentinelAIAgent
+```
+
+Check status:
+```
+sc query SentinelAIAgent
+```
+
+## Logs
+
+Agent logs are written to:
+```
+C:\ProgramData\SentinelAI\agent.log
+```
+
+View logs:
+```
+Get-Content "C:\ProgramData\SentinelAI\agent.log" -Tail 50
+```
+
+## Troubleshooting
+
+**Agent won't start:**
+- Check Windows Event Viewer for service errors
+- Verify config.json is valid JSON
+- Check server URL is accessible
+- Review agent.log for errors
+
+**High CPU usage:**
+- Increase heartbeat_interval in config
+- Increase process_check_interval
+- Check for runaway processes
+
+**Network issues:**
+- Verify server is running and accessible
+- Check firewall rules allow outbound connection
+- Test with: `ping your-server`
+
+## Uninstallation
+
+Run `SentinelAgent_Uninstaller.bat` as Administrator
+
+This will:
+- Stop the service
+- Remove the service registration  
+- Delete installation directory
+- Preserve configuration files
+
+## Support
+
+For issues:
+1. Check agent logs: `C:\ProgramData\SentinelAI\agent.log`
+2. Verify network connectivity
+3. Ensure backend is running: `curl http://your-server:8000/health`
