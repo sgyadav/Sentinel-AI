@@ -1,5 +1,5 @@
 {
-  "server_url": "http://192.168.42.236:8000",
+  "server_url": "https://sentinel-ai-fz5u.onrender.com",
   "organization": "YourCompany",
   "agent_id": "GENERATE_NEW",
   "agent_version": "1.0.0",
