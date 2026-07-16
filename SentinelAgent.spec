@@ -1,12 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules
+
+hiddenimports = ['pythoncom', 'pywintypes', 'servicemanager', 'win32api', 'win32con', 'win32event', 'win32evtlog', 'win32pipe', 'win32service', 'win32serviceutil', 'win32timezone', 'win32trace', 'winerror', 'ntsecuritycon']
+hiddenimports += collect_submodules('win32com')
 
 
 a = Analysis(
     ['agent\\agent.py'],
     pathex=[],
-    binaries=[],
+    binaries=[('C:\\Users\\Administrator\\Desktop\\Sentinel AI\\backend\\venv\\Lib\\site-packages\\pywin32_system32\\pythoncom314.dll', '.'), ('C:\\Users\\Administrator\\Desktop\\Sentinel AI\\backend\\venv\\Lib\\site-packages\\pywin32_system32\\pywintypes314.dll', '.')],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -20,9 +20,10 @@ import asyncio
 import csv
 import io
 import json
+import os
 import re
 import sqlite3
-from datetime import datetime, timedelta, time as dt_time
+from datetime import datetime, timedelta, time as dt_time, timezone
 from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
@@ -55,6 +56,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 HEARTBEAT_ONLINE_SECONDS = 30
 DEFAULT_ORG_ID = "default"
+LOCAL_TZ = timezone(timedelta(hours=5, minutes=30), "IST")
 
 
 def get_db():
@@ -102,6 +104,48 @@ def iso_utc(value):
     if not timestamp:
         return None
     return timestamp.isoformat() + "Z"
+
+
+def local_day_bounds_utc(day):
+    start_local = datetime.combine(day, dt_time.min, tzinfo=LOCAL_TZ)
+    end_local = datetime.combine(day, dt_time.max, tzinfo=LOCAL_TZ)
+    return (
+        start_local.astimezone(timezone.utc).replace(tzinfo=None),
+        end_local.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
+def local_date_filter(period, start_date=None, end_date=None, days=1):
+    now_utc = datetime.utcnow()
+    today_local = datetime.now(LOCAL_TZ).date()
+    start = None
+    end = None
+
+    if period == "today":
+        start, end = local_day_bounds_utc(today_local)
+    elif period == "yesterday":
+        start, end = local_day_bounds_utc(today_local - timedelta(days=1))
+    elif period in {"last7", "last_7_days"}:
+        start = now_utc - timedelta(days=7)
+    elif period == "last_month":
+        start = now_utc - timedelta(days=30)
+    elif period == "custom":
+        if start_date:
+            start_value = parse_datetime(start_date)
+            if len(str(start_date)) == 10:
+                start_value = datetime.strptime(str(start_date), "%Y-%m-%d")
+            if start_value:
+                start, _ = local_day_bounds_utc(start_value.date())
+        if end_date:
+            end_value = parse_datetime(end_date)
+            if len(str(end_date)) == 10:
+                end_value = datetime.strptime(str(end_date), "%Y-%m-%d")
+            if end_value:
+                _, end = local_day_bounds_utc(end_value.date())
+    elif period != "all" and days:
+        start = now_utc - timedelta(days=days)
+
+    return start, end
 
 
 def normalize_agent_id(value: str) -> str:
@@ -398,13 +442,15 @@ def health():
 # ============= AUTH ENDPOINTS =============
 @app.post("/auth/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
-    logger.info(f"Login attempt for user: {request.username}")
-    user = db.query(UserDB).filter(UserDB.username == request.username).first()
+    username = (request.username or "").strip()
+    password = request.password or ""
+    logger.info(f"Login attempt for user: {username}")
+    user = db.query(UserDB).filter(UserDB.username == username).first()
 
     if not user:
-        logger.error(f"User not found: {request.username}")
+        logger.error(f"User not found: {username}")
         db.add(LoginHistoryDB(
-            username=request.username,
+            username=username,
             ip_address="0.0.0.0",
             status="Failed",
             reason="User not found"
@@ -412,15 +458,31 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    hashed_input = hash_password(request.password)
+    hashed_input = hash_password(password)
+    stored_password = user.password or ""
 
-    if user.password != hashed_input:
-        logger.error(f"Password mismatch for user: {request.username}")
+    if stored_password != hashed_input:
+        if stored_password == password:
+            user.password = hashed_input
+            logger.info(f"Upgraded legacy password storage for user: {username}")
+        else:
+            logger.error(f"Password mismatch for user: {username}")
+            db.add(LoginHistoryDB(
+                username=username,
+                ip_address="0.0.0.0",
+                status="Failed",
+                reason="Invalid password"
+            ))
+            db.commit()
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not user.is_active:
+        logger.error(f"Inactive user login blocked: {username}")
         db.add(LoginHistoryDB(
-            username=request.username,
+            username=username,
             ip_address="0.0.0.0",
             status="Failed",
-            reason="Invalid password"
+            reason="Inactive user"
         ))
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -434,7 +496,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     log_audit(db, "Admin Login", "user", user.username, actor=user.username)
     db.commit()
     publish_realtime("audit", {"action": "Admin Login", "username": user.username})
-    logger.info(f"User {request.username} logged in successfully")
+    logger.info(f"User {username} logged in successfully")
     return {
         "success": True,
         "access_token": f"token_{user.username}_{int(datetime.now().timestamp())}",
@@ -1073,27 +1135,7 @@ def get_usb_events(
     db: Session = Depends(get_db)
 ):
     try:
-        now = datetime.utcnow()
-        start = None
-        end = None
-        if period == "today":
-            start = datetime.combine(now.date(), dt_time.min)
-            end = datetime.combine(now.date(), dt_time.max)
-        elif period == "yesterday":
-            day = now.date() - timedelta(days=1)
-            start = datetime.combine(day, dt_time.min)
-            end = datetime.combine(day, dt_time.max)
-        elif period in {"last7", "last_7_days"}:
-            start = now - timedelta(days=7)
-        elif period == "last_month":
-            start = now - timedelta(days=30)
-        elif period == "custom":
-            start = parse_datetime(start_date)
-            end = parse_datetime(end_date)
-            if end and end_date and len(str(end_date)) == 10:
-                end = end + timedelta(days=1) - timedelta(microseconds=1)
-        elif period != "all" and days:
-            start = now - timedelta(days=days)
+        start, end = local_date_filter(period, start_date, end_date, days)
 
         query = db.query(USBEventDB)
         if start:
@@ -1231,6 +1273,21 @@ def receive_endpoint_session(event: EndpointSessionEvent, db: Session = Depends(
         event_time = parse_datetime(event.event_time) or datetime.utcnow()
 
         if event.action == "login":
+            if agent_id or event.hostname:
+                stale_query = db.query(EndpointSessionDB).filter(
+                    EndpointSessionDB.logout_time == None,
+                    EndpointSessionDB.username != event.username
+                )
+                if agent_id:
+                    stale_query = stale_query.filter(EndpointSessionDB.agent_id == agent_id)
+                else:
+                    stale_query = stale_query.filter(EndpointSessionDB.hostname == event.hostname)
+                for stale in stale_query.all():
+                    stale.logout_time = event_time
+                    stale.status = "Closed"
+                    login_time = parse_datetime(stale.login_time) or event_time
+                    stale.session_duration = max(0, int((event_time - login_time).total_seconds()))
+
             active = db.query(EndpointSessionDB).filter(
                 EndpointSessionDB.agent_id == agent_id,
                 EndpointSessionDB.username == event.username,
@@ -1256,6 +1313,16 @@ def receive_endpoint_session(event: EndpointSessionEvent, db: Session = Depends(
                 EndpointSessionDB.username == event.username,
                 EndpointSessionDB.logout_time == None
             ).order_by(EndpointSessionDB.login_time.desc()).first()
+            if not active:
+                if agent_id or event.hostname:
+                    fallback = db.query(EndpointSessionDB).filter(
+                        EndpointSessionDB.logout_time == None
+                    )
+                    if agent_id:
+                        fallback = fallback.filter(EndpointSessionDB.agent_id == agent_id)
+                    else:
+                        fallback = fallback.filter(EndpointSessionDB.hostname == event.hostname)
+                    active = fallback.order_by(EndpointSessionDB.login_time.desc()).first()
             if active:
                 active.logout_time = event_time
                 active.status = "Closed"
@@ -1306,23 +1373,7 @@ def get_login_events(
     db: Session = Depends(get_db)
 ):
     query = db.query(EndpointSessionDB)
-    now = datetime.utcnow()
-    start = None
-    end = None
-    if period == "today":
-        start = datetime.combine(now.date(), dt_time.min)
-        end = datetime.combine(now.date(), dt_time.max)
-    elif period == "yesterday":
-        day = now.date() - timedelta(days=1)
-        start = datetime.combine(day, dt_time.min)
-        end = datetime.combine(day, dt_time.max)
-    elif period in {"last7", "last_7_days"}:
-        start = now - timedelta(days=7)
-    elif period == "custom":
-        start = parse_datetime(start_date)
-        end = parse_datetime(end_date)
-        if end and end_date and len(str(end_date)) == 10:
-            end = end + timedelta(days=1) - timedelta(microseconds=1)
+    start, end = local_date_filter(period, start_date, end_date)
     if start:
         query = query.filter(EndpointSessionDB.login_time >= start)
     if end:

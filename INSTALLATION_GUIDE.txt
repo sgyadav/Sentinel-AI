@@ -3,18 +3,23 @@
 
 ## System Requirements
 - Windows 10 or later
-- Python 3.8+ (if running from source)
 - Administrator privileges for installation
 
 ## Installation Methods
 
 ### Method 1: Using Installer (Recommended)
-1. Run `SentinelAgent_Installer.bat` as Administrator
-2. Follow the prompts
+1. Confirm `config.json` points to the admin backend, for example `http://192.168.42.236:8000`
+2. Run `SentinelAgentSetup.exe` as Administrator
 3. Agent will be installed as Windows Service
 4. Service starts automatically with Windows
 
-### Method 2: Manual Installation
+### Method 2: Batch Installer With URL Override
+Run as Administrator:
+```
+SentinelAgent_Installer.bat http://ADMIN-PC-IP:8000
+```
+
+### Method 3: Manual Installation
 1. Create directory: `C:\Program Files\SentinelAI`
 2. Copy `SentinelAgent.exe` to that directory
 3. Create config at: `C:\ProgramData\SentinelAI\config.json`
@@ -53,6 +58,23 @@ net stop SentinelAIAgent
 Check status:
 ```
 sc query SentinelAIAgent
+```
+
+## Registration Check
+
+Run diagnostics as Administrator:
+```
+SentinelAgent_Diagnostics.bat
+```
+
+Or from the installed folder:
+```
+"C:\Program Files\SentinelAI\SentinelAgent.exe" diagnose
+```
+
+Register immediately without waiting for the service loop:
+```
+"C:\Program Files\SentinelAI\SentinelAgent.exe" register
 ```
 
 ## Logs

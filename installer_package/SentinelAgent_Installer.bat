@@ -9,12 +9,15 @@ set INSTALL_DIR=C:\Program Files\SentinelAI
 set CONFIG_DIR=C:\ProgramData\SentinelAI
 set LOG_FILE=%CONFIG_DIR%\install.log
 set SERVER_URL=%~1
-if "%SERVER_URL%"=="" set SERVER_URL=http://localhost:8000
+set PACKAGE_DIR=%~dp0
 
 REM Create directories
 mkdir "%INSTALL_DIR%" 2>nul
 mkdir "%CONFIG_DIR%" 2>nul
 mkdir "%CONFIG_DIR%\logs" 2>nul
+
+REM Stop existing service before replacing files.
+net stop SentinelAIAgent >>"%LOG_FILE%" 2>&1
 
 REM Copy agent executable
 copy "SentinelAgent.exe" "%INSTALL_DIR%\" >>"%LOG_FILE%" 2>&1
@@ -25,26 +28,31 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Create default config if not exists
-if not exist "%CONFIG_DIR%\config.json" (
-    (
-        echo {
-        echo   "server_url": "%SERVER_URL%",
-        echo   "organization": "Default",
-        echo   "heartbeat_interval": 10,
-        echo   "usb_check_interval": 5,
-        echo   "process_check_interval": 30,
-        echo   "max_retries": 3,
-        echo   "retry_delay": 5,
-        echo   "agent_id": "GENERATE_NEW",
-        echo   "agent_version": "1.0.0"
-        echo }
-    ) > "%CONFIG_DIR%\config.json"
-    echo Configuration created: %CONFIG_DIR%\config.json >>"%LOG_FILE%"
+REM Refresh config every install, but preserve the assigned AGT-xxxxx ID.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PACKAGE_DIR%ConfigureSentinelAgent.ps1" -ServerUrl "%SERVER_URL%" >>"%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    echo Configuration failed >>"%LOG_FILE%"
+    echo [ERROR] Could not create or update %CONFIG_DIR%\config.json
+    pause
+    exit /b 1
 )
 
-REM Register Windows Service
-"%INSTALL_DIR%\SentinelAgent.exe" install --startup auto >>"%LOG_FILE%" 2>&1
+REM Register immediately so the admin can see the endpoint before the service loop starts.
+"%INSTALL_DIR%\SentinelAgent.exe" register >>"%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    echo Agent registration failed >>"%LOG_FILE%"
+    echo [ERROR] Could not register endpoint with backend.
+    echo Check server_url in %CONFIG_DIR%\config.json and confirm the backend is reachable.
+    echo Log file: %LOG_FILE%
+    pause
+    exit /b 1
+)
+
+REM Register or update Windows Service
+"%INSTALL_DIR%\SentinelAgent.exe" update --startup auto >>"%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    "%INSTALL_DIR%\SentinelAgent.exe" install --startup auto >>"%LOG_FILE%" 2>&1
+)
 
 if errorlevel 1 (
     echo Service registration failed >>"%LOG_FILE%"
@@ -55,6 +63,14 @@ if errorlevel 1 (
 
 REM Start service
 net start SentinelAIAgent >>"%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    echo Service start failed >>"%LOG_FILE%"
+    echo [ERROR] SentinelAIAgent service did not start.
+    echo Run diagnostics: "%INSTALL_DIR%\SentinelAgent.exe" diagnose
+    echo Log file: %LOG_FILE%
+    pause
+    exit /b 1
+)
 
 echo. >>"%LOG_FILE%"
 echo Installation completed successfully at %date% %time% >>"%LOG_FILE%"

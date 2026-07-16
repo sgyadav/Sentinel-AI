@@ -277,19 +277,19 @@ class ProcessList(BaseModel):
 class Heartbeat(BaseModel):
     device_uuid: str = ""
     agent_id: str = ""
-    hostname: str
-    username: str
-    ip_address: str
-    operating_system: str
-    cpu_usage: float
-    ram_usage: float
-    disk_usage: float
-    cpu_cores: int
-    total_ram: float
-    available_ram: float
-    boot_time: str
-    last_seen: str
-    status: str
+    hostname: str = "Unknown"
+    username: str = "Unknown"
+    ip_address: str = "0.0.0.0"
+    operating_system: str = "Windows"
+    cpu_usage: float = 0
+    ram_usage: float = 0
+    disk_usage: float = 0
+    cpu_cores: int = 0
+    total_ram: float = 0
+    available_ram: float = 0
+    boot_time: str = ""
+    last_seen: str = ""
+    status: str = "Online"
     mac_address: str = ""
     os_version: str = ""
     device_type: str = "Laptop"

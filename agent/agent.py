@@ -26,10 +26,13 @@ from collections import deque
 import socket as socket_module
 
 try:
+    import pythoncom
+    import pywintypes
     import win32serviceutil
     import win32service
     import win32event
     import win32evtlog
+    import win32timezone
     import servicemanager
     PYWIN32_AVAILABLE = True
 except ImportError:
@@ -73,12 +76,14 @@ class SystemMonitor:
         self.last_usb_devices = set()
         self.last_processes = set()
         self.last_event_record = 0
+        self.usb_baseline_ready = False
         self.load_state()
 
     def agent_id(self):
         return self.config.get("agent_id") or "GENERATE_NEW"
 
-    def current_username(self):
+    def interactive_username(self):
+        """Return the active Windows console/RDP user, or None when nobody is logged in."""
         try:
             result = subprocess.run(
                 "query user",
@@ -95,7 +100,12 @@ class SystemMonitor:
                         return username
         except Exception:
             pass
+        return None
 
+    def current_username(self):
+        active_user = self.interactive_username()
+        if active_user:
+            return active_user
         for key in ("USERNAME", "USER", "USERDOMAIN"):
             value = os.getenv(key)
             if value:
@@ -116,6 +126,7 @@ class SystemMonitor:
                     self.last_usb_devices = set(state.get('usb_devices', []))
                     self.last_processes = set(state.get('processes', []))
                     self.last_event_record = int(state.get('last_event_record', 0) or 0)
+                    self.usb_baseline_ready = bool(state.get('usb_baseline_ready', False))
         except Exception as e:
             logger.error(f"Error loading state: {e}")
 
@@ -126,7 +137,8 @@ class SystemMonitor:
                 json.dump({
                     'usb_devices': list(self.last_usb_devices),
                     'processes': list(self.last_processes),
-                    'last_event_record': self.last_event_record
+                    'last_event_record': self.last_event_record,
+                    'usb_baseline_ready': self.usb_baseline_ready
                 }, f)
         except Exception as e:
             logger.error(f"Error saving state: {e}")
@@ -262,6 +274,13 @@ class SystemMonitor:
                 pass
 
             events = []
+
+            if not self.usb_baseline_ready:
+                self.last_usb_devices = current_devices
+                self.usb_baseline_ready = True
+                self.save_state()
+                logger.info(f"USB baseline initialized with {len(current_devices)} device(s)")
+                return []
             
             # Check for inserted devices
             inserted = current_devices - self.last_usb_devices
@@ -298,7 +317,8 @@ class SystemMonitor:
 class SentinelAPIClient:
     def __init__(self, config):
         self.config = config
-        self.server_url = config['server_url']
+        self.server_url = str(config['server_url']).rstrip("/")
+        self.config['server_url'] = self.server_url
         self.session = requests.Session()
         self.retry_count = 0
 
@@ -320,7 +340,7 @@ class SentinelAPIClient:
                 self.retry_count = 0
                 return True
             else:
-                logger.warning(f"Heartbeat failed: {response.status_code}")
+                logger.warning(f"Heartbeat failed: {response.status_code} {response.text[:300]}")
                 self.retry_count += 1
                 return False
         except requests.exceptions.RequestException as e:
@@ -385,7 +405,7 @@ class SentinelAPIClient:
                 timeout=5
             )
             return response.status_code == 200
-        except:
+        except requests.exceptions.RequestException:
             return False
 
 # ============= CONFIGURATION MANAGEMENT =============
@@ -510,10 +530,11 @@ class AgentService:
 
     def _session_payload(self, action, username=None):
         system_info = self.monitor.get_system_info() or {}
+        selected_user = username or self.monitor.interactive_username() or self.monitor.current_username()
         return {
             "agent_id": self.config.get("agent_id", "GENERATE_NEW"),
             "hostname": system_info.get("hostname") or socket_module.gethostname(),
-            "username": username or self.monitor.current_username(),
+            "username": selected_user,
             "ip_address": system_info.get("ip_address", "127.0.0.1"),
             "action": action,
             "event_time": datetime.utcnow().isoformat()
@@ -590,8 +611,8 @@ class AgentService:
                     if not self.monitor.last_event_record:
                         self.monitor.last_event_record = newest
                         self.monitor.save_state()
-                        current_user = self.monitor.current_username()
-                        if self.client.is_server_available():
+                        current_user = self.monitor.interactive_username()
+                        if current_user and self.client.is_server_available():
                             self.active_username = current_user
                             self.client.send_session_event(self._session_payload("login", current_user))
                         time.sleep(15)
@@ -611,7 +632,10 @@ class AgentService:
                         payload = self._session_event_from_windows_event(event)
                         if payload and self.client.is_server_available():
                             self.client.send_session_event(payload)
-                            self.active_username = payload["username"] if payload["action"] == "login" else self.active_username
+                            if payload["action"] == "login":
+                                self.active_username = payload["username"]
+                            elif payload["action"] == "logout" and payload["username"] == self.active_username:
+                                self.active_username = None
 
                     self.monitor.save_state()
                 finally:
@@ -630,12 +654,12 @@ class AgentService:
         """Track Windows user sessions for SOC login/logout history."""
         while self.running:
             try:
-                current_username = self.monitor.current_username()
+                current_username = self.monitor.interactive_username()
                 if current_username != self.active_username:
                     if self.active_username and self.client.is_server_available():
                         self.client.send_session_event(self._session_payload("logout", self.active_username))
                     self.active_username = current_username
-                    if self.client.is_server_available():
+                    if self.active_username and self.client.is_server_available():
                         self.client.send_session_event(self._session_payload("login", self.active_username))
                 time.sleep(15)
             except Exception as e:
@@ -643,37 +667,134 @@ class AgentService:
                 time.sleep(self.config['retry_delay'])
 
 
+def register_once():
+    """Send one heartbeat now and persist the backend-assigned AGT ID."""
+    config = load_config()
+    client = SentinelAPIClient(config)
+    monitor = SystemMonitor(config)
+
+    print("SENTINEL AI AGENT REGISTRATION")
+    print(f"Config: {CONFIG_FILE}")
+    print(f"Server: {client.server_url}")
+    print(f"Agent ID before: {config.get('agent_id')}")
+
+    if not client.is_server_available():
+        print(f"[ERROR] Backend is not reachable: {client.server_url}/health")
+        print("Fix server_url in C:\\ProgramData\\SentinelAI\\config.json and confirm firewall/network access.")
+        return 2
+
+    system_info = monitor.get_system_info()
+    if not system_info:
+        print("[ERROR] Could not collect system information.")
+        return 3
+
+    if not client.send_heartbeat(system_info):
+        print("[ERROR] Heartbeat registration failed. Check C:\\ProgramData\\SentinelAI\\agent.log")
+        return 4
+
+    print(f"[OK] Registered/updated endpoint: {config.get('agent_id')}")
+    return 0
+
+
+def run_diagnostics():
+    """Print the agent's practical registration state."""
+    config = load_config()
+    client = SentinelAPIClient(config)
+
+    print("SENTINEL AI AGENT DIAGNOSTICS")
+    print(f"Config file: {CONFIG_FILE}")
+    print(f"Log file: {LOG_FILE}")
+    print(f"Server URL: {client.server_url}")
+    print(f"Agent ID: {config.get('agent_id')}")
+    print(f"Backend health: {'OK' if client.is_server_available() else 'FAILED'}")
+    print()
+    return register_once()
+
+
 # ============= WINDOWS SERVICE WRAPPER =============
 if PYWIN32_AVAILABLE:
     class SentinelWindowsService(win32serviceutil.ServiceFramework):
         _svc_name_ = "SentinelAIAgent"
         _svc_display_name_ = "Sentinel AI Endpoint Agent"
-        _svc_description_ = "Collects endpoint heartbeat, process, USB, and login/logout telemetry for SENTINEL AI."
+        _svc_description_ = (
+            "Collects endpoint heartbeat, process, USB, and login/logout telemetry for SENTINEL AI."
+        )
 
         def __init__(self, args):
-            win32serviceutil.ServiceFramework.__init__(self, args)
+            super().__init__(args)
             self.stop_event = win32event.CreateEvent(None, 0, 0, None)
-            self.agent = AgentService()
 
         def SvcStop(self):
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-            self.agent.send_logout_event()
-            self.agent.running = False
+
+            try:
+                if hasattr(self, "agent"):
+                    self.agent.send_logout_event()
+                    self.agent.running = False
+            except Exception:
+                logger.exception("Error during stop")
+
             win32event.SetEvent(self.stop_event)
 
         def SvcDoRun(self):
-            servicemanager.LogInfoMsg("Sentinel AI Endpoint Agent service starting")
-            self.agent.run()
+            try:
+                logger.info("===== STEP 1 ===== Entered SvcDoRun")
+                self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
 
+                servicemanager.LogInfoMsg(
+                    "Sentinel AI Endpoint Agent service starting"
+                )
 
+                logger.info("===== STEP 2 ===== Reporting RUNNING")
+                self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+
+                logger.info("===== STEP 3 ===== Creating AgentService")
+                self.agent = AgentService()
+
+                logger.info("===== STEP 4 ===== Starting worker thread")
+
+                worker = threading.Thread(
+                    target=self.agent.run,
+                    daemon=True
+                )
+                worker.start()
+
+                logger.info("===== STEP 5 ===== Waiting")
+
+                win32event.WaitForSingleObject(
+                    self.stop_event,
+                    win32event.INFINITE
+                )
+
+                if hasattr(self, "agent"):
+                    self.agent.running = False
+                logger.info("===== STEP 6 ===== Service stopped")
+
+            except Exception:
+                logger.exception("SERVICE START FAILED")
+                raise
 # ============= ENTRY POINT =============
 if __name__ == "__main__":
     service_commands = {"install", "update", "remove", "start", "stop", "restart", "debug"}
-    if len(sys.argv) > 1 and sys.argv[1].lower() in service_commands:
+    agent_command = sys.argv[1].lower() if len(sys.argv) > 1 else ""
+    if agent_command == "register":
+        sys.exit(register_once())
+    if agent_command == "diagnose":
+        sys.exit(run_diagnostics())
+    if agent_command in service_commands:
         if not PYWIN32_AVAILABLE:
             print("pywin32 is required for Windows service commands. Install with: pip install pywin32")
             sys.exit(1)
         win32serviceutil.HandleCommandLine(SentinelWindowsService)
+    elif PYWIN32_AVAILABLE and getattr(sys, "frozen", False):
+        try:
+            servicemanager.Initialize()
+            servicemanager.PrepareToHostSingle(SentinelWindowsService)
+            servicemanager.StartServiceCtrlDispatcher()
+        except Exception as exc:
+            logger.warning(f"Service dispatcher unavailable, running console agent: {exc}")
+            agent = AgentService()
+            agent.run()
     else:
         agent = AgentService()
         agent.run()
