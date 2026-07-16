@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from "axios";
 
 const API = axios.create({
-  baseURL: `${window.location.protocol}//${window.location.hostname}:8000`,
-  timeout: 15000
+  baseURL: import.meta.env.VITE_API_URL,
+  timeout: 15000,
 });
+
+export default API;
 
 API.interceptors.request.use(config => {
   const token = localStorage.getItem('token');
