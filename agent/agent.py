@@ -46,7 +46,7 @@ LOG_FILE = CONFIG_DIR / "agent.log"
 STATE_FILE = CONFIG_DIR / "state.json"
 
 DEFAULT_CONFIG = {
-    "server_url": "http://localhost:8000",
+    "server_url": "https://sentinel-ai-fz5u.onrender.com",
     "organization": "Default",
     "heartbeat_interval": 10,  # seconds
     "usb_check_interval": 5,
@@ -717,41 +717,34 @@ if PYWIN32_AVAILABLE:
         _svc_name_ = "SentinelAIAgent"
         _svc_display_name_ = "Sentinel AI Endpoint Agent"
         _svc_description_ = (
-            "Collects endpoint heartbeat, process, USB, and login/logout telemetry for SENTINEL AI."
+            "Collects endpoint heartbeat, process, USB, and login/logout telemetry."
         )
 
         def __init__(self, args):
             super().__init__(args)
             self.stop_event = win32event.CreateEvent(None, 0, 0, None)
+            self.agent = AgentService()
 
         def SvcStop(self):
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
 
             try:
-                if hasattr(self, "agent"):
-                    self.agent.send_logout_event()
-                    self.agent.running = False
+                self.agent.running = False
+                self.agent.send_logout_event()
             except Exception:
-                logger.exception("Error during stop")
+                logger.exception("Error while stopping service")
 
             win32event.SetEvent(self.stop_event)
 
         def SvcDoRun(self):
             try:
-                logger.info("===== STEP 1 ===== Entered SvcDoRun")
-                self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
+                logger.info("Sentinel Windows Service started")
 
                 servicemanager.LogInfoMsg(
                     "Sentinel AI Endpoint Agent service starting"
                 )
 
-                logger.info("===== STEP 2 ===== Reporting RUNNING")
                 self.ReportServiceStatus(win32service.SERVICE_RUNNING)
-
-                logger.info("===== STEP 3 ===== Creating AgentService")
-                self.agent = AgentService()
-
-                logger.info("===== STEP 4 ===== Starting worker thread")
 
                 worker = threading.Thread(
                     target=self.agent.run,
@@ -759,20 +752,18 @@ if PYWIN32_AVAILABLE:
                 )
                 worker.start()
 
-                logger.info("===== STEP 5 ===== Waiting")
+                while self.agent.running:
+                    rc = win32event.WaitForSingleObject(self.stop_event, 1000)
+                    if rc == win32event.WAIT_OBJECT_0:
+                        break
 
-                win32event.WaitForSingleObject(
-                    self.stop_event,
-                    win32event.INFINITE
-                )
-
-                if hasattr(self, "agent"):
-                    self.agent.running = False
-                logger.info("===== STEP 6 ===== Service stopped")
+                worker.join(timeout=5)
 
             except Exception:
-                logger.exception("SERVICE START FAILED")
+                logger.exception("SERVICE CRASHED")
                 raise
+
+
 # ============= ENTRY POINT =============
 if __name__ == "__main__":
     service_commands = {"install", "update", "remove", "start", "stop", "restart", "debug"}
