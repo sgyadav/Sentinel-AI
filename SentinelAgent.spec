@@ -8,7 +8,7 @@ hiddenimports += collect_submodules('win32com')
 a = Analysis(
     ['agent\\agent.py'],
     pathex=[],
-    binaries=[('C:\\Users\\Administrator\\Desktop\\Sentinel AI\\backend\\venv\\Lib\\site-packages\\pywin32_system32\\pythoncom314.dll', '.'), ('C:\\Users\\Administrator\\Desktop\\Sentinel AI\\backend\\venv\\Lib\\site-packages\\pywin32_system32\\pywintypes314.dll', '.')],
+    binaries=[('C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\pywin32_system32\\pythoncom314.dll', '.'), ('C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\pywin32_system32\\pywintypes314.dll', '.')],
     datas=[],
     hiddenimports=hiddenimports,
     hookspath=[],

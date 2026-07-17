@@ -11,6 +11,7 @@ from typing import Dict, List, Any
 import time
 import subprocess
 from pathlib import Path
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 class WindowsEndpointAgent:
     """Collects telemetry from Windows endpoints"""
     
-    def __init__(self, server_url: str = "http://localhost:8000", hostname: str = None):
+    def __init__(self, server_url: str = "https://sentinel-ai-fz5u.onrender.com", hostname: str = None):
         """
         Initialize Windows Endpoint Agent
         
@@ -266,8 +267,9 @@ if __name__ == "__main__":
     )
     
     # Initialize agent
-    server_url = os.getenv("SENTINEL_SERVER_URL", "http://localhost:8000")
-    agent = WindowsEndpointAgent(server_url=server_url)
-    
-    # Start monitoring
-    agent.start_continuous_monitoring(interval_seconds=60)
+    server_url = os.getenv(
+    "SENTINEL_SERVER_URL",
+    "https://sentinel-ai-fz5u.onrender.com"
+)
+
+agent = WindowsEndpointAgent(server_url=server_url)

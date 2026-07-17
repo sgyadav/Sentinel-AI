@@ -20,21 +20,12 @@ from pathlib import Path
 
 
 def detect_server_url():
-    """Choose a practical default backend URL for employee PCs."""
+    """Return the production backend URL."""
     override = os.getenv("SENTINEL_SERVER_URL")
     if override:
         return override.rstrip("/")
-    try:
-        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        probe.connect(("8.8.8.8", 80))
-        ip_address = probe.getsockname()[0]
-        probe.close()
-        if ip_address and not ip_address.startswith(("127.", "169.254.")):
-            return f"http://{ip_address}:8000"
-    except Exception:
-        pass
-    return "http://localhost:8000"
 
+    return "https://sentinel-ai-fz5u.onrender.com"
 def create_installer_script():
     """Create batch script for Windows installer"""
     installer_script = r'''
@@ -188,7 +179,7 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $ConfigDir "logs") | Out-Null
 
 $newConfig = [ordered]@{
-    server_url = "http://localhost:8000"
+    server_url = "https://sentinel-ai-fz5u.onrender.com"
     organization = "Default"
     agent_id = "GENERATE_NEW"
     agent_version = "1.0.0"
@@ -449,7 +440,7 @@ def create_readme():
 ## Installation Methods
 
 ### Method 1: Using Installer (Recommended)
-1. Confirm `config.json` points to the admin backend, for example `http://192.168.42.236:8000`
+1. Confirm `config.json` points to the admin backend, for example `https://sentinel-ai-fz5u.onrender.com`
 2. Run `SentinelAgentSetup.exe` as Administrator
 3. Agent will be installed as Windows Service
 4. Service starts automatically with Windows
@@ -476,7 +467,7 @@ Edit `C:\\ProgramData\\SentinelAI\\config.json`:
 
 ```json
 {
-  "server_url": "http://your-server:8000",
+  "server_url": "https://sentinel-ai-fz5u.onrender.com",
   "organization": "Your Company",
   "heartbeat_interval": 10,
   "usb_check_interval": 5,

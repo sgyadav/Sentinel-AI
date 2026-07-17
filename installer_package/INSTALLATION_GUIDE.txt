@@ -8,7 +8,7 @@
 ## Installation Methods
 
 ### Method 1: Using Installer (Recommended)
-1. Confirm `config.json` points to the admin backend, for example `http://192.168.42.236:8000`
+1. Confirm `config.json` points to the admin backend, for example `https://sentinel-ai-fz5u.onrender.com`
 2. Run `SentinelAgentSetup.exe` as Administrator
 3. Agent will be installed as Windows Service
 4. Service starts automatically with Windows
@@ -35,7 +35,7 @@ Edit `C:\ProgramData\SentinelAI\config.json`:
 
 ```json
 {
-  "server_url": "http://your-server:8000",
+  "server_url": "https://sentinel-ai-fz5u.onrender.com",
   "organization": "Your Company",
   "heartbeat_interval": 10,
   "usb_check_interval": 5,

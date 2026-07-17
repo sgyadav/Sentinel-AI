@@ -12,7 +12,7 @@ New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $ConfigDir "logs") | Out-Null
 
 $newConfig = [ordered]@{
-    server_url = "http://localhost:8000"
+    server_url = "https://sentinel-ai-fz5u.onrender.com"
     organization = "Default"
     agent_id = "GENERATE_NEW"
     agent_version = "1.0.0"

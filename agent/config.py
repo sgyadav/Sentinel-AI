@@ -1,4 +1,4 @@
-SERVER_URL = "http://127.0.0.1:8000"
+SERVER_URL = "https://sentinel-ai-fz5u.onrender.com"
 
 HEARTBEAT_ENDPOINT = "/heartbeat"
 
@@ -14,4 +14,4 @@ AGENT_NAME = "Sentinel Agent"
 
 AGENT_VERSION = "1.0.0"
 
-VERIFY_SSL = False
+VERIFY_SSL = True

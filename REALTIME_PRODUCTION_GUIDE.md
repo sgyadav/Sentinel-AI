@@ -437,7 +437,7 @@ To connect REAL endpoint agents and collect actual telemetry:
 2. CONFIGURE AGENT
    endpoint_agent/config.py:
    
-   SERVER_URL = "http://your-sentinel-server:8000/api/realtime/threats/ingest"
+   SERVER_URL = "SERVER_URL = "https://sentinel-ai-fz5u.onrender.com/api/realtime/threats/ingest""
    HEARTBEAT_INTERVAL = 30  # seconds
    
    REAL DATA COLLECTION:
