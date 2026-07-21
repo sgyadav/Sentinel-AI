@@ -1,0 +1,11 @@
+2026-07-17 17:36:16,510 - WARNING - Service dispatcher unavailable, running console agent: (1063, 'StartServiceCtrlDispatcher', 'The service process could not connect to the service controller.')
+2026-07-17 17:36:16,523 - INFO - ============================================================
+2026-07-17 17:36:16,524 - INFO - SENTINEL AI ENDPOINT AGENT STARTED
+2026-07-17 17:36:16,524 - INFO - Server: https://sentinel-ai-fz5u.onrender.com
+2026-07-17 17:36:16,524 - INFO - Agent ID: AGT-00001
+2026-07-17 17:36:16,524 - INFO - ============================================================
+2026-07-17 17:36:16,538 - WARNING - Server unavailable, retrying...
+agent.py:238: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+agent.py:598: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+2026-07-17 17:36:21,784 - INFO - Session event reported: login Window Manager\DWM-1
+2026-07-17 17:36:28,322 - INFO - Heartbeat sent successfully

@@ -20,7 +20,7 @@ REM Stop existing service before replacing files.
 net stop SentinelAIAgent >>"%LOG_FILE%" 2>&1
 
 REM Copy agent executable
-copy "SentinelAgent.exe" "%INSTALL_DIR%\" >>"%LOG_FILE%" 2>&1
+copy "%PACKAGE_DIR%SentinelAgent.exe" "%INSTALL_DIR%\" >>"%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo Installation failed: Could not copy executable >>"%LOG_FILE%"
     echo [ERROR] Could not copy SentinelAgent.exe to %INSTALL_DIR%
@@ -41,11 +41,8 @@ REM Register immediately so the admin can see the endpoint before the service lo
 "%INSTALL_DIR%\SentinelAgent.exe" register >>"%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo Agent registration failed >>"%LOG_FILE%"
-    echo [ERROR] Could not register endpoint with backend.
-    echo Check server_url in %CONFIG_DIR%\config.json and confirm the backend is reachable.
-    echo Log file: %LOG_FILE%
-    pause
-    exit /b 1
+    echo [WARN] Could not register endpoint with backend right now.
+    echo [WARN] Continuing installation. The agent service will retry after Windows starts.
 )
 
 REM Register or update Windows Service

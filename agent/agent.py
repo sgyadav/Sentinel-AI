@@ -11,6 +11,7 @@ Stop: python agent.py stop
 import os
 import sys
 import json
+import re
 import time
 import uuid
 import socket
@@ -24,6 +25,7 @@ from pathlib import Path
 from datetime import datetime
 from collections import deque
 import socket as socket_module
+from urllib.parse import urlparse
 
 try:
     import pythoncom
@@ -56,6 +58,43 @@ DEFAULT_CONFIG = {
     "agent_id": "GENERATE_NEW",
     "agent_version": "1.0.0"
 }
+
+
+def _looks_like_local_server(url):
+    return bool(re.match(
+        r"^(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|\[?::1\]?)",
+        url,
+        re.IGNORECASE
+    ))
+
+
+def normalize_server_url(value):
+    """Return a valid base URL for the backend, repairing common installer typos."""
+    url = "".join(str(value or "").strip().split()).replace("\\", "/")
+    if not url:
+        raise ValueError("server_url is empty")
+
+    if "://" not in url:
+        single_slash_scheme = re.match(r"^(https?):/+(.*)$", url, re.IGNORECASE)
+        if single_slash_scheme:
+            url = f"{single_slash_scheme.group(1).lower()}://{single_slash_scheme.group(2).lstrip('/')}"
+        else:
+            scheme = "http" if _looks_like_local_server(url) else "https"
+            url = f"{scheme}://{url}"
+
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise ValueError("server_url must start with http:// or https://")
+
+    if not parsed.netloc and parsed.path:
+        repaired = f"{parsed.scheme.lower()}://{parsed.path.lstrip('/')}"
+        parsed = urlparse(repaired)
+        url = repaired
+
+    if not parsed.netloc:
+        raise ValueError("server_url must include a hostname")
+
+    return url.rstrip("/")
 
 # ============= LOGGING =============
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -317,7 +356,7 @@ class SystemMonitor:
 class SentinelAPIClient:
     def __init__(self, config):
         self.config = config
-        self.server_url = str(config['server_url']).rstrip("/")
+        self.server_url = normalize_server_url(config['server_url'])
         self.config['server_url'] = self.server_url
         self.session = requests.Session()
         self.retry_count = 0
@@ -422,6 +461,14 @@ def load_config():
                         changed = True
                 if not config.get("agent_id"):
                     config["agent_id"] = "GENERATE_NEW"
+                    changed = True
+                try:
+                    normalized_url = normalize_server_url(config.get("server_url"))
+                except ValueError as exc:
+                    logger.error(f"Invalid server_url in {CONFIG_FILE}: {exc}")
+                    normalized_url = normalize_server_url(DEFAULT_CONFIG["server_url"])
+                if config.get("server_url") != normalized_url:
+                    config["server_url"] = normalized_url
                     changed = True
                 if changed:
                     save_config(config)

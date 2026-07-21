@@ -11,21 +11,61 @@ Output:
 """
 
 import os
+import re
 import sys
 import shutil
 import json
 import subprocess
 import socket
 from pathlib import Path
+from urllib.parse import urlparse
+
+
+def looks_like_local_server(url):
+    return bool(re.match(
+        r"^(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|\[?::1\]?)",
+        url,
+        re.IGNORECASE
+    ))
+
+
+def normalize_server_url(value):
+    url = "".join(str(value or "").strip().split()).replace("\\", "/")
+    if not url:
+        raise ValueError("server_url is empty")
+
+    if "://" not in url:
+        single_slash_scheme = re.match(r"^(https?):/+(.*)$", url, re.IGNORECASE)
+        if single_slash_scheme:
+            url = f"{single_slash_scheme.group(1).lower()}://{single_slash_scheme.group(2).lstrip('/')}"
+        else:
+            scheme = "http" if looks_like_local_server(url) else "https"
+            url = f"{scheme}://{url}"
+
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise ValueError("server_url must start with http:// or https://")
+
+    if not parsed.netloc and parsed.path:
+        repaired = f"{parsed.scheme.lower()}://{parsed.path.lstrip('/')}"
+        parsed = urlparse(repaired)
+        url = repaired
+
+    if not parsed.netloc:
+        raise ValueError("server_url must include a hostname")
+
+    return url.rstrip("/")
 
 
 def detect_server_url():
     """Return the production backend URL."""
     override = os.getenv("SENTINEL_SERVER_URL")
     if override:
-        return override.rstrip("/")
+        return normalize_server_url(override)
 
-    return "https://sentinel-ai-fz5u.onrender.com"
+    return normalize_server_url("https://sentinel-ai-fz5u.onrender.com")
+
+
 def create_installer_script():
     """Create batch script for Windows installer"""
     installer_script = r'''
@@ -50,7 +90,7 @@ REM Stop existing service before replacing files.
 net stop SentinelAIAgent >>"%LOG_FILE%" 2>&1
 
 REM Copy agent executable
-copy "SentinelAgent.exe" "%INSTALL_DIR%\" >>"%LOG_FILE%" 2>&1
+copy "%PACKAGE_DIR%SentinelAgent.exe" "%INSTALL_DIR%\" >>"%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo Installation failed: Could not copy executable >>"%LOG_FILE%"
     echo [ERROR] Could not copy SentinelAgent.exe to %INSTALL_DIR%
@@ -71,11 +111,8 @@ REM Register immediately so the admin can see the endpoint before the service lo
 "%INSTALL_DIR%\SentinelAgent.exe" register >>"%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo Agent registration failed >>"%LOG_FILE%"
-    echo [ERROR] Could not register endpoint with backend.
-    echo Check server_url in %CONFIG_DIR%\config.json and confirm the backend is reachable.
-    echo Log file: %LOG_FILE%
-    pause
-    exit /b 1
+    echo [WARN] Could not register endpoint with backend right now.
+    echo [WARN] Continuing installation. The agent service will retry after Windows starts.
 )
 
 REM Register or update Windows Service
@@ -175,6 +212,50 @@ $ConfigDir = "C:\ProgramData\SentinelAI"
 $TargetConfig = Join-Path $ConfigDir "config.json"
 $SourceConfig = Join-Path $PSScriptRoot "config.json"
 
+function Test-LocalServerUrl {
+    param([string]$Value)
+    return $Value -match "^(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|\[?::1\]?)"
+}
+
+function Normalize-ServerUrl {
+    param([string]$Url)
+
+    $value = [string]$Url
+    $value = ($value.Trim() -replace "\s+", "")
+    $value = $value -replace "\\", "/"
+
+    if (-not $value) {
+        throw "server_url is empty"
+    }
+
+    if ($value -notmatch "://") {
+        if ($value -match "^(https?):/+(.*)$") {
+            $scheme = $Matches[1].ToLowerInvariant()
+            $hostAndPath = $Matches[2].TrimStart("/")
+            $value = "${scheme}://${hostAndPath}"
+        } else {
+            $scheme = if (Test-LocalServerUrl $value) { "http" } else { "https" }
+            $value = "${scheme}://${value}"
+        }
+    }
+
+    if ($value -match "^(https?):///+(.+)$") {
+        $scheme = $Matches[1].ToLowerInvariant()
+        $hostAndPath = $Matches[2].TrimStart("/")
+        $value = "${scheme}://${hostAndPath}"
+    }
+
+    $uri = $null
+    if (-not [System.Uri]::TryCreate($value, [System.UriKind]::Absolute, [ref]$uri)) {
+        throw "server_url is not a valid absolute URL: $value"
+    }
+    if ($uri.Scheme -notin @("http", "https") -or -not $uri.Host) {
+        throw "server_url must start with http:// or https:// and include a hostname: $value"
+    }
+
+    return $value.TrimEnd([char[]]"/")
+}
+
 New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $ConfigDir "logs") | Out-Null
 
@@ -213,12 +294,10 @@ if (Test-Path $TargetConfig) {
 }
 
 if ($ServerUrl -and $ServerUrl.Trim().Length -gt 0) {
-    $newConfig["server_url"] = $ServerUrl.Trim().TrimEnd("/")
+    $newConfig["server_url"] = $ServerUrl
 }
 
-if (-not $newConfig["server_url"]) {
-    throw "server_url is empty"
-}
+$newConfig["server_url"] = Normalize-ServerUrl $newConfig["server_url"]
 
 [pscustomobject]$newConfig | ConvertTo-Json -Depth 5 | Set-Content -Path $TargetConfig -Encoding UTF8
 Write-Host "Config ready: $TargetConfig"
