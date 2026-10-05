@@ -24,7 +24,7 @@ Open browser: **http://localhost:5173**
 ### Step 4: Login
 ```
 Username: admin
-Password: SecurePass123
+Password: your-configured-password
 ```
 
 ### Step 5: View Dashboard
@@ -56,7 +56,7 @@ Dashboard loads with:
 ```bash
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"SecurePass123"}'
+  -d '{"username":"admin","password":"your-configured-password"}'
 ```
 
 Response:

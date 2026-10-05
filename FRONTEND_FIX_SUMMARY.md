@@ -53,7 +53,7 @@
 
 ### Login Screen
 - Clean Material-UI design
-- Demo credentials: admin / SecurePass123
+- Demo credentials: admin / your-configured-password
 - Secure JWT token storage
 
 ### Dashboard
@@ -144,7 +144,7 @@ docker-compose exec backend python -m pytest
 
 ### Test 1: Login & Dashboard
 1. Go to http://localhost:5173
-2. Login with: admin / SecurePass123
+2. Login with: admin / your-configured-password
 3. Dashboard loads with:
    - Employee count
    - Device count

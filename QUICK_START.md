@@ -23,7 +23,7 @@ http://localhost:5173
 
 ## Login
 - **Username:** admin
-- **Password:** Admin1234
+- **Password:** your-configured-password
 
 ---
 

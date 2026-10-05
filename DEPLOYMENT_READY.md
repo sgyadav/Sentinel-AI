@@ -210,7 +210,7 @@ curl -X POST http://localhost:8000/auth/signup \
   -d '{
     "username": "admin",
     "email": "admin@example.com",
-    "password": "SecurePass123",
+    "password": "your-configured-password",
     "role": "Admin"
   }'
 ```
@@ -221,7 +221,7 @@ curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
-    "password": "SecurePass123"
+    "password": "your-configured-password"
   }'
 ```
 

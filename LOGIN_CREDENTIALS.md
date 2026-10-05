@@ -5,7 +5,7 @@
 ### Login Credentials
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 Email: admin@example.com
 Role: Admin
 ```
@@ -17,14 +17,14 @@ Role: Admin
 ### Via Web Browser
 1. Open: **http://localhost:5173**
 2. Enter username: `admin`
-3. Enter password: `Admin1234`
+3. Enter password: `your-configured-password`
 4. Click **Login**
 
 ### Via API
 ```bash
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"Admin1234"}'
+  -d '{"username":"admin","password":"your-configured-password"}'
 ```
 
 **Response:**
@@ -155,7 +155,7 @@ curl -X POST http://localhost:8000/auth/change-password \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "old_password": "Admin1234",
+    "old_password": "your-configured-password",
     "new_password": "NewPass123"
   }'
 ```

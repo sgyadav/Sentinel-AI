@@ -275,7 +275,7 @@ Buttons: [Report] [Cancel]
 
 **Login:**
 - Username: `admin`
-- Password: `Admin1234`
+- Password: `your-configured-password`
 
 **Features:**
 - ✅ JWT token-based authentication
@@ -360,7 +360,7 @@ Buttons: [Report] [Cancel]
 ## 📊 EXAMPLE WORKFLOW
 
 ```
-1. Login with admin / Admin1234
+1. Login with admin / your-configured-password
 2. Click "Add Employee" 
    → Add John Doe from IT Security
 3. Click "Register Device"

@@ -67,7 +67,7 @@ echo API Docs: http://localhost:8000/docs
 echo.
 echo Login with:
 echo   Username: admin
-echo   Password: Admin1234
+echo   Password: your-configured-password
 echo.
 echo Close the backend and frontend windows to stop.
 echo.

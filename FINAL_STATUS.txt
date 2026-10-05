@@ -13,7 +13,7 @@
 ✅ AUTHENTICATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-   ✓ Secure login (admin / Admin1234)
+   ✓ Secure login (admin / your-configured-password)
    ✓ JWT token-based authentication
    ✓ Password hashing (SHA256)
    ✓ Session management
@@ -163,7 +163,7 @@ BROWSER:
 
 LOGIN:
   Username: admin
-  Password: Admin1234
+  Password: your-configured-password
 
 ═══════════════════════════════════════════════════════════════════════════════════
 📱 INTERFACE TABS

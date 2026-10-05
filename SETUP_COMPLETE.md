@@ -118,7 +118,7 @@ http://localhost:5173
 
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ---
@@ -218,7 +218,7 @@ Password: Admin1234
 
 ## ✅ ALL FEATURES TESTED & WORKING
 
-✅ Login with admin/Admin1234
+✅ Login with admin/your-configured-password
 ✅ Add/Edit/Delete employees
 ✅ Add/Edit/Delete devices
 ✅ Assign devices to employees

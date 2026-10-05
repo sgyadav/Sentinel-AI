@@ -17,7 +17,7 @@ This will:
 Then login with:
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ---
@@ -45,7 +45,7 @@ http://localhost:5173
 
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ---
@@ -121,7 +121,7 @@ Done!
 
 ### Login fails
 - Verify backend is running: `http://localhost:8000/health`
-- Use correct credentials: `admin` / `Admin1234`
+- Use correct credentials: `admin` / `your-configured-password`
 - Clear browser cache (Ctrl+Shift+Delete)
 
 ### Can't add employee
@@ -135,7 +135,7 @@ Done!
 
 1. Double-click `START_ALL.bat`
 2. Wait for browser to open
-3. Login with admin/Admin1234
+3. Login with admin/your-configured-password
 4. Go to "Employees" tab
 5. Click "Add Employee"
 6. Fill:

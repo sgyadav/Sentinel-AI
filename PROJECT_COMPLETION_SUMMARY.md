@@ -268,7 +268,7 @@ sentinel-ai/
 
 **Admin Account:**
 - Username: `admin`
-- Password: `SecurePass123`
+- Password: `your-configured-password`
 - Role: Admin
 
 **API Base URL:** `http://localhost:8000`

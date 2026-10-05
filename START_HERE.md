@@ -4,7 +4,7 @@
 
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 **These are your login credentials. Keep them safe!**
@@ -58,7 +58,7 @@ npm run dev
 1. **Open Browser**: http://localhost:5173
 2. **Enter Credentials**:
    - Username: `admin`
-   - Password: `Admin1234`
+   - Password: `your-configured-password`
 3. **Click LOGIN**
 4. **You're In!** 🎉
 
@@ -180,7 +180,7 @@ After first login:
 1. Click **Settings** (bottom left in sidebar)
 2. Click **Change Password**
 3. Enter:
-   - Current: `Admin1234`
+   - Current: `your-configured-password`
    - New: Your secure password
    - Confirm: Your secure password
 4. Click **Update**
@@ -254,7 +254,7 @@ curl http://localhost:8000/health
 ```bash
 curl -X POST http://localhost:8000/auth/login ^
   -H "Content-Type: application/json" ^
-  -d "{\"username\":\"admin\",\"password\":\"Admin1234\"}"
+  -d "{\"username\":\"admin\",\"password\":\"your-configured-password\"}"
 ```
 
 ### Get Employees
@@ -291,7 +291,7 @@ If you encounter issues:
 - [ ] Frontend running on port 5173
 - [ ] Browser opens http://localhost:5173
 - [ ] Login page shows
-- [ ] Enter admin / Admin1234
+- [ ] Enter admin / your-configured-password
 - [ ] Successfully logged in
 - [ ] See dashboard with employees/devices
 - [ ] Can navigate tabs

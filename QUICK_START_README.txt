@@ -14,7 +14,7 @@ http://localhost:5173
 ## 3️⃣ Login
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ## ✅ Done!

@@ -78,7 +78,7 @@ echo   - API Docs:  http://localhost:8000/docs
 echo.
 echo LOGIN CREDENTIALS:
 echo   - Username:  admin
-echo   - Password:  Admin1234
+echo   - Password:  your-configured-password
 echo.
 echo USEFUL COMMANDS:
 echo   - View logs:     docker-compose logs -f

@@ -179,7 +179,7 @@ Capabilities:
 ### 1. LOGIN SECURELY
 1. Go to http://localhost:5173
 2. Enter your username (admin)
-3. Enter your password (Admin1234)
+3. Enter your password (your-configured-password)
 4. Check "Remember Me" (optional)
 5. Click Login
 
@@ -426,7 +426,7 @@ Dashboard Summary:
 ```
 Admin Account:
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 
 Change this immediately in production!
 Settings → Change Password

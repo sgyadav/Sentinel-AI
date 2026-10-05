@@ -23,7 +23,7 @@ This is a **REAL, PRODUCTION-READY** application with:
 
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ---
@@ -447,7 +447,7 @@ GET    /health                  - Health check
 3. Click "Register"
 
 **Step 2: Add Employee**
-1. Login with admin/Admin1234
+1. Login with admin/your-configured-password
 2. Go to Employees tab
 3. Click "Add Employee"
 4. Fill: ID, Name, Email, Department, Designation
@@ -528,7 +528,7 @@ GET    /health                  - Health check
 
 1. **Start System:** Run RUN_SENTINEL_AI.bat
 2. **Register Organization:** Create your org
-3. **Login:** Use admin/Admin1234
+3. **Login:** Use admin/your-configured-password
 4. **Add Employees:** Populate employee list
 5. **Register Devices:** Add your devices
 6. **Assign Devices:** Link to employees
@@ -568,7 +568,7 @@ python backend\init_db.py
 
 ### Login Failed
 - Check backend is running
-- Verify credentials: admin / Admin1234
+- Verify credentials: admin / your-configured-password
 - Check API is accessible: http://localhost:8000/health
 
 ---

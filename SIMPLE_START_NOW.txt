@@ -37,7 +37,7 @@ http://localhost:5173
 
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ---
@@ -62,7 +62,7 @@ Password: Admin1234
 
 ## 🎯 QUICK TEST
 
-1. Login with admin/Admin1234
+1. Login with admin/your-configured-password
 2. Go to "Employees" tab
 3. Click "+ Add Employee"
 4. Fill form:
@@ -102,7 +102,7 @@ API Docs: http://localhost:8000/docs
 ### Login fails
 1. Make sure backend is running
 2. Check: http://localhost:8000/health
-3. Use: admin / Admin1234
+3. Use: admin / your-configured-password
 
 ---
 

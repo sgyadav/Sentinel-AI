@@ -40,7 +40,7 @@
 - Configurable via environment variables
 
 **Credentials:**
-- Default: `admin` / `Admin1234`
+- Default: `admin` / `your-configured-password`
 
 ---
 
@@ -406,6 +406,52 @@ See `DEPLOYMENT_GUIDE.md` for:
 - ✅ Audit trail (login_history table)
 - ✅ Role-based access control structure in place
 - ✅ Error messages don't leak sensitive data
+
+## API QUICK CHECKS
+
+### 1. Register User
+```bash
+curl -X POST http://localhost:8000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","email":"admin@example.com","password":"your-configured-password","role":"Admin"}'
+```
+
+### 2. Login
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your-configured-password"}'
+```
+
+### 3. Register Employee
+```bash
+curl -X POST http://localhost:8000/employees \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"employee_id":"EMP-001","name":"John Doe","email":"john@example.com","department":"IT","designation":"Engineer"}'
+```
+
+### 4. Register Device
+```bash
+curl -X POST http://localhost:8000/devices \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"PC-001","ip_address":"192.168.1.100","operating_system":"Windows 11"}'
+```
+
+### 5. Send Security Event
+```bash
+curl -X POST http://localhost:8000/event \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"PC-001","event_type":"Failed Login","severity":"High","description":"Multiple failed login attempts"}'
+```
+
+### 6. Get Dashboard
+```bash
+curl http://localhost:8000/api/realtime/dashboard/overview \
+  -H "Authorization: Bearer <token>"
+```
 
 ---
 

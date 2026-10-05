@@ -22,7 +22,7 @@
 
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ---
@@ -127,7 +127,7 @@ Health:    http://localhost:8000/health
 
 ### Step 1: Login
 - Username: `admin`
-- Password: `Admin1234`
+- Password: `your-configured-password`
 - Click LOGIN
 
 ### Step 2: Add Employee
@@ -238,7 +238,7 @@ npm start
 - [ ] Frontend running on port 5173
 - [ ] Browser opens with login page
 - [ ] Login page looks professional
-- [ ] Can login with admin/Admin1234
+- [ ] Can login with admin/your-configured-password
 - [ ] Dashboard shows 4 metric cards
 - [ ] Can add employee successfully
 - [ ] Employee appears in table
@@ -273,7 +273,7 @@ npm start
 2. **Check backend logs** - Look at Terminal 1 output
 3. **Restart services** - Stop and restart both
 4. **Clear cache** - Ctrl+Shift+Delete in browser
-5. **Verify credentials** - Use admin/Admin1234
+5. **Verify credentials** - Use admin/your-configured-password
 
 ---
 

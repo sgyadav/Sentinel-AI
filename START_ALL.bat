@@ -35,7 +35,7 @@ echo   http://localhost:5173
 echo.
 echo Login with:
 echo   Username: admin
-echo   Password: Admin1234
+echo   Password: your-configured-password
 echo.
 echo ============================================================
 echo.

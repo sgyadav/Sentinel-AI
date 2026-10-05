@@ -270,7 +270,7 @@ System-Wide:
 ```
 URL: http://localhost:5173
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 (Note: Remove demo credentials in production)
 ```
 

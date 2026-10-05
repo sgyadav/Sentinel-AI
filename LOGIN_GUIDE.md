@@ -4,7 +4,7 @@
 
 ```
 Username: admin
-Password: Admin1234
+Password: your-configured-password
 ```
 
 ⚠️ **IMPORTANT**: Change this password immediately after first login!
@@ -74,7 +74,7 @@ npm run dev
 1. **Open Browser**: http://localhost:5173
 2. **Enter Credentials**:
    - Username: `admin`
-   - Password: `Admin1234`
+   - Password: `your-configured-password`
 3. **Click Login**
 4. **Redirect**: Should go to dashboard
 
@@ -100,7 +100,7 @@ Test login:
 ```bash
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"Admin1234"}'
+  -d '{"username":"admin","password":"your-configured-password"}'
 ```
 
 Expected response:
@@ -215,7 +215,7 @@ After login, you'll see:
 
 1. **Change Default Password**: Do this immediately!
    - Settings → Change Password
-   - Enter current: `Admin1234`
+   - Enter current: `your-configured-password`
    - Enter new password (8+ chars)
    - Confirm new password
 
