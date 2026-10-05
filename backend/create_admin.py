@@ -1,7 +1,8 @@
-import hashlib
+import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import func
+from auth.password import hash_password
 
 DATABASE_URL = "sqlite:///./sentinel.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -23,8 +24,14 @@ Base.metadata.create_all(bind=engine)
 db = SessionLocal()
 admin = db.query(UserDB).filter(UserDB.username == "admin").first()
 if not admin:
-    hashed_pass = hashlib.sha256("Admin1234".encode()).hexdigest()
-    print(f"Password hash: {hashed_pass}")
+    initial_password = (
+        os.getenv("SENTINEL_INITIAL_ADMIN_PASSWORD")
+        or os.getenv("INITIAL_ADMIN_PASSWORD")
+        or os.getenv("ADMIN_PASSWORD")
+    )
+    if not initial_password:
+        raise SystemExit("Set SENTINEL_INITIAL_ADMIN_PASSWORD before creating the admin account")
+    hashed_pass = hash_password(initial_password)
     admin_user = UserDB(
         username="admin",
         email="admin@sentinelai.local",
@@ -34,7 +41,7 @@ if not admin:
     )
     db.add(admin_user)
     db.commit()
-    print("[OK] Admin user created - admin / Admin1234")
+    print("[OK] Admin user created")
 else:
     print(f"[OK] Admin already exists")
 db.close()

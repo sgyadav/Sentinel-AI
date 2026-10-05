@@ -1,20 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import API from "./services/api";
 
-API.interceptors.request.use(config => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-API.interceptors.request.use(config => {
-  const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
   const [currentPage, setCurrentPage] = useState('login');

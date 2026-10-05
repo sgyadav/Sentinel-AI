@@ -3,24 +3,35 @@ const subscribers = new Set();
 
 function getWebSocketUrl() {
   const configuredUrl = import.meta.env.VITE_WS_URL;
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
   if (configuredUrl) {
     if (configuredUrl.startsWith("ws://") || configuredUrl.startsWith("wss://")) {
       return configuredUrl;
     }
 
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${protocol}//${window.location.host}${configuredUrl}`;
   }
 
-  return `${protocol}//${window.location.hostname}:8000/ws`;
+  const apiUrl = new URL(
+    import.meta.env.VITE_API_URL || "https://sentinel-ai-fz5u.onrender.com",
+    window.location.origin,
+  );
+  apiUrl.protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
+  apiUrl.pathname = "/ws";
+  apiUrl.search = "";
+  apiUrl.hash = "";
+
+  return apiUrl.toString();
 }
 
 export function connectWebSocket(onMessage) {
   subscribers.add(onMessage);
 
   if (!socket || socket.readyState === WebSocket.CLOSED) {
-    socket = new WebSocket(getWebSocketUrl());
+    const token = localStorage.getItem("token");
+    const protocols = token ? [`bearer.${token}`, "sentinel-auth"] : ["sentinel-auth"];
+    socket = new WebSocket(getWebSocketUrl(), protocols);
 
     socket.onopen = () => {
       console.log("WebSocket connected");

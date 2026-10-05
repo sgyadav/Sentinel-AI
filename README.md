@@ -26,6 +26,9 @@ From the repository root, create and activate a virtual environment, install the
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r backend\requirements.txt
+$env:SECRET_KEY = "set-a-random-secret-at-least-32-characters"
+$env:SENTINEL_INITIAL_ADMIN_PASSWORD = "choose-a-unique-admin-password"
+$env:SENTINEL_CORS_ORIGINS = "http://localhost:5173"
 Set-Location backend
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -38,6 +41,7 @@ In a second terminal from the repository root:
 
 ```powershell
 Set-Location frontend
+$env:VITE_API_URL = "http://127.0.0.1:8000"
 npm ci
 npm run dev
 ```
@@ -48,7 +52,9 @@ Vite prints the local dashboard URL when the development server starts.
 
 The frontend is the Vite application in `frontend/`, and the backend is deployed separately on Render. Keep the current Vercel project connected to this repository with its existing project settings. If configuring a new Vercel project, use `frontend` as the Root Directory, `npm run build` as the Build Command, and `dist` as the Output Directory.
 
-The frontend currently targets the existing Render API URL in its API client. Backend URL or environment changes should be coordinated with the Vercel project so the deployed dashboard continues to reach its API.
+The frontend defaults to the existing Render API URL, `https://sentinel-ai-fz5u.onrender.com`. You can override it in Vercel with `VITE_API_URL`; the WebSocket URL is derived from the same host unless `VITE_WS_URL` is set.
+
+For the backend on Render, configure `SECRET_KEY` with a random value of at least 32 characters and `SENTINEL_CORS_ORIGINS` with the exact Vercel site origin (for example, `https://your-app.vercel.app`). Set `SENTINEL_INITIAL_ADMIN_PASSWORD` only if the database does not yet contain the `admin` account; this setting creates that account on first startup and does not reset an existing password. The backend also accepts `INITIAL_ADMIN_PASSWORD` or `ADMIN_PASSWORD` as aliases. Never put secret values in Git or send them in chat.
 
 ## Container deployment
 

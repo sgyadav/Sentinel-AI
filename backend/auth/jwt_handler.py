@@ -7,13 +7,19 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-minimum-32-chars")
+def _secret_key() -> str:
+    key = (
+        os.getenv("SECRET_KEY")
+        or os.getenv("JWT_SECRET_KEY")
+        or os.getenv("SENTINEL_SECRET_KEY")
+    )
+    if not key or len(key) < 32 or key.lower().startswith(("your-", "change-me", "replace-me")):
+        raise RuntimeError("Configure SECRET_KEY with a random value of at least 32 characters")
+    return key
+
+
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-
-# Warn if using default secret key
-if SECRET_KEY == "your-secret-key-change-in-production-minimum-32-chars":
-    logger.warning("⚠️  Using default SECRET_KEY - CHANGE THIS IN PRODUCTION!")
 
 
 def create_access_token(data: dict) -> str:
@@ -33,7 +39,7 @@ def create_access_token(data: dict) -> str:
 
         encoded_jwt = jwt.encode(
             to_encode,
-            SECRET_KEY,
+            _secret_key(),
             algorithm=ALGORITHM
         )
         return encoded_jwt
@@ -55,7 +61,7 @@ def verify_access_token(token: str) -> dict:
     try:
         payload = jwt.decode(
             token,
-            SECRET_KEY,
+            _secret_key(),
             algorithms=[ALGORITHM]
         )
         return payload

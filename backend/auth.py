@@ -6,13 +6,13 @@ Handles JWT tokens, password hashing, sessions, and role-based access
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
+from auth.jwt_handler import _secret_key
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import os
 
 # ============= SECURITY CONFIG =============
-SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production-minimum-32-chars")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8 hours
 
@@ -55,7 +55,7 @@ def create_access_token(
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, _secret_key(), algorithm=ALGORITHM)
     
     return encoded_jwt, expire
 
@@ -65,7 +65,7 @@ def verify_token(token: str) -> Optional[TokenData]:
     Returns: TokenData if valid, None if invalid
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _secret_key(), algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         roles: list = payload.get("roles", [])
         

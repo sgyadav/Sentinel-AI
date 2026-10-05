@@ -28,9 +28,11 @@ from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from auth.password import hash_password, verify_password
+from auth.jwt_handler import create_access_token, verify_access_token
+from core.security import get_current_admin
 from sqlalchemy import create_engine, text, or_, func
 from sqlalchemy.orm import sessionmaker, Session
-import hashlib
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -71,18 +73,24 @@ def get_db():
 # ============= FASTAPI APP =============
 app = FastAPI(title="SENTINEL AI", version="1.0.0")
 
+_configured_origins = (
+    os.getenv("SENTINEL_CORS_ORIGINS")
+    or os.getenv("CORS_ORIGINS")
+    or os.getenv("FRONTEND_URL")
+    or "*"
+)
+ALLOWED_ORIGINS = [origin.strip().rstrip("/") for origin in _configured_origins.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 # ============= UTILITIES =============
-def hash_password(password: str) -> str:
-    return "sha256:" + hashlib.sha256(password.encode()).hexdigest()
 
 
 def parse_datetime(value):
@@ -301,8 +309,8 @@ class RealtimeHub:
     def __init__(self):
         self.clients = set()
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, subprotocol=None):
+        await websocket.accept(subprotocol=subprotocol)
         self.clients.add(websocket)
 
     def disconnect(self, websocket: WebSocket):
@@ -415,16 +423,25 @@ def startup():
         # Create admin user if not exists
         admin = db.query(UserDB).filter(UserDB.username == "admin").first()
         if not admin:
+            initial_password = (
+                os.getenv("SENTINEL_INITIAL_ADMIN_PASSWORD")
+                or os.getenv("INITIAL_ADMIN_PASSWORD")
+                or os.getenv("ADMIN_PASSWORD")
+            )
+            if not initial_password:
+                logger.warning("Admin account not seeded: configure SENTINEL_INITIAL_ADMIN_PASSWORD")
+                update_endpoint_statuses(db)
+                return
             admin_user = UserDB(
                 username="admin",
                 email="admin@sentinelai.local",
-                password=hash_password("Admin1234"),
+                password=hash_password(initial_password),
                 role="Admin",
                 is_active=True
             )
             db.add(admin_user)
             db.commit()
-            logger.info("Admin user created: username=admin, password=Admin1234")
+            logger.info("Initial admin account created")
         update_endpoint_statuses(db)
     except Exception as e:
         logger.error(f"Startup error: {str(e)}")
@@ -458,23 +475,23 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    hashed_input = hash_password(password)
     stored_password = user.password or ""
 
-    if stored_password != hashed_input:
-        if stored_password == password:
-            user.password = hashed_input
-            logger.info(f"Upgraded legacy password storage for user: {username}")
-        else:
-            logger.error(f"Password mismatch for user: {username}")
-            db.add(LoginHistoryDB(
-                username=username,
-                ip_address="0.0.0.0",
-                status="Failed",
-                reason="Invalid password"
-            ))
-            db.commit()
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+    password_matches = verify_password(password, stored_password) or stored_password == password
+    if not password_matches:
+        logger.warning("Login rejected for user: %s", username)
+        db.add(LoginHistoryDB(
+            username=username,
+            ip_address="0.0.0.0",
+            status="Failed",
+            reason="Invalid password"
+        ))
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not stored_password.startswith("pbkdf2_sha256$"):
+        user.password = hash_password(password)
+        logger.info("Upgraded legacy password hash for user: %s", username)
 
     if not user.is_active:
         logger.error(f"Inactive user login blocked: {username}")
@@ -499,12 +516,12 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     logger.info(f"User {username} logged in successfully")
     return {
         "success": True,
-        "access_token": f"token_{user.username}_{int(datetime.now().timestamp())}",
+        "access_token": create_access_token({"sub": user.username, "role": user.role}),
         "user": {"username": user.username, "role": user.role, "email": user.email}
     }
 
 
-@app.post("/auth/logout")
+@app.post("/auth/logout", dependencies=[Depends(get_current_admin)])
 def logout(username: str = Body("admin", embed=True), db: Session = Depends(get_db)):
     last_login = db.query(LoginHistoryDB).filter(
         LoginHistoryDB.username == username,
@@ -523,7 +540,7 @@ def logout(username: str = Body("admin", embed=True), db: Session = Depends(get_
 
 
 # ============= EMPLOYEE ENDPOINTS =============
-@app.post("/employees")
+@app.post("/employees", dependencies=[Depends(get_current_admin)])
 def create_employee(emp: EmployeeCreate, db: Session = Depends(get_db)):
     try:
         existing = db.query(EmployeeDB).filter(EmployeeDB.employee_id == emp.employee_id).first()
@@ -546,7 +563,7 @@ def create_employee(emp: EmployeeCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/employees")
+@app.get("/employees", dependencies=[Depends(get_current_admin)])
 def get_employees(db: Session = Depends(get_db)):
     employees = db.query(EmployeeDB).all()
     return {
@@ -566,7 +583,7 @@ def get_employees(db: Session = Depends(get_db)):
     }
 
 
-@app.put("/employees/{employee_id}")
+@app.put("/employees/{employee_id}", dependencies=[Depends(get_current_admin)])
 def update_employee(employee_id: str, emp: EmployeeCreate, db: Session = Depends(get_db)):
     employee = db.query(EmployeeDB).filter(EmployeeDB.employee_id == employee_id).first()
     if not employee:
@@ -583,7 +600,7 @@ def update_employee(employee_id: str, emp: EmployeeCreate, db: Session = Depends
     return {"success": True, "message": "Employee updated"}
 
 
-@app.delete("/employees/{employee_id}")
+@app.delete("/employees/{employee_id}", dependencies=[Depends(get_current_admin)])
 def delete_employee(employee_id: str, db: Session = Depends(get_db)):
     employee = db.query(EmployeeDB).filter(EmployeeDB.employee_id == employee_id).first()
     if not employee:
@@ -597,7 +614,7 @@ def delete_employee(employee_id: str, db: Session = Depends(get_db)):
 
 
 # ============= DEVICE ENDPOINTS =============
-@app.post("/devices")
+@app.post("/devices", dependencies=[Depends(get_current_admin)])
 def create_device(dev: DeviceCreate, db: Session = Depends(get_db)):
     try:
         requested_id = normalize_agent_id(dev.device_id)
@@ -649,7 +666,7 @@ def create_device(dev: DeviceCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/devices")
+@app.get("/devices", dependencies=[Depends(get_current_admin)])
 def get_devices(
     search: str = Query("", description="Search hostname, employee, department, IP, or agent ID"),
     db: Session = Depends(get_db)
@@ -713,7 +730,7 @@ def get_devices(
     }
 
 
-@app.put("/devices/{device_id}")
+@app.put("/devices/{device_id}", dependencies=[Depends(get_current_admin)])
 def update_device(device_id: str, dev: DeviceCreate, db: Session = Depends(get_db)):
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
     if not device:
@@ -733,7 +750,7 @@ def update_device(device_id: str, dev: DeviceCreate, db: Session = Depends(get_d
     return {"success": True, "message": "Device updated"}
 
 
-@app.delete("/devices/{device_id}")
+@app.delete("/devices/{device_id}", dependencies=[Depends(get_current_admin)])
 def delete_device(device_id: str, db: Session = Depends(get_db)):
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
     if not device:
@@ -747,7 +764,7 @@ def delete_device(device_id: str, db: Session = Depends(get_db)):
 
 
 # ============= ASSIGNMENT ENDPOINTS =============
-@app.post("/assignments")
+@app.post("/assignments", dependencies=[Depends(get_current_admin)])
 def create_assignment(assign: AssignmentCreate, db: Session = Depends(get_db)):
     try:
         employee = db.query(EmployeeDB).filter(EmployeeDB.employee_id == assign.employee_id).first()
@@ -777,7 +794,7 @@ def create_assignment(assign: AssignmentCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/assignments")
+@app.get("/assignments", dependencies=[Depends(get_current_admin)])
 def get_assignments(db: Session = Depends(get_db)):
     assignments = db.query(AssignmentDB).all()
     return {
@@ -795,7 +812,7 @@ def get_assignments(db: Session = Depends(get_db)):
     }
 
 
-@app.put("/assignments/{assignment_id}")
+@app.put("/assignments/{assignment_id}", dependencies=[Depends(get_current_admin)])
 def update_assignment(
     assignment_id: int,
     assignment: AssignmentUpdate,
@@ -819,7 +836,7 @@ def update_assignment(
     return {"success": True, "message": "Assignment updated successfully"}
 
 
-@app.delete("/assignments/{assignment_id}")
+@app.delete("/assignments/{assignment_id}", dependencies=[Depends(get_current_admin)])
 def delete_assignment(assignment_id: int, db: Session = Depends(get_db)):
     assignment = db.query(AssignmentDB).filter(AssignmentDB.id == assignment_id).first()
 
@@ -834,7 +851,7 @@ def delete_assignment(assignment_id: int, db: Session = Depends(get_db)):
 
 
 # ============= THREAT ENDPOINTS =============
-@app.get("/threats")
+@app.get("/threats", dependencies=[Depends(get_current_admin)])
 def get_threats(db: Session = Depends(get_db)):
     threats = db.query(ThreatDB).all()
     return {
@@ -855,7 +872,7 @@ def get_threats(db: Session = Depends(get_db)):
     }
 
 
-@app.delete("/threats/clear")
+@app.delete("/threats/clear", dependencies=[Depends(get_current_admin)])
 def clear_threats(admin: str = Query("admin"), db: Session = Depends(get_db)):
     try:
         count = db.query(ThreatDB).count()
@@ -1021,7 +1038,7 @@ def receive_processes(payload=Body(...), db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/processes/live")
+@app.get("/processes/live", dependencies=[Depends(get_current_admin)])
 def get_live_processes(
     hostname: str = None,
     agent_id: str = None,
@@ -1067,7 +1084,7 @@ def get_live_processes(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/processes/clear")
+@app.delete("/processes/clear", dependencies=[Depends(get_current_admin)])
 def clear_processes(admin: str = Query("admin"), db: Session = Depends(get_db)):
     try:
         count = db.query(ProcessDB).count()
@@ -1125,7 +1142,7 @@ def receive_usb_event(event: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/usb-events")
+@app.get("/usb-events", dependencies=[Depends(get_current_admin)])
 def get_usb_events(
     period: str = Query("today", description="today, yesterday, last7, last_month, custom, all"),
     days: int = 1,
@@ -1175,7 +1192,7 @@ def get_usb_events(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/usb-events/clear")
+@app.delete("/usb-events/clear", dependencies=[Depends(get_current_admin)])
 def clear_usb_events(admin: str = Query("admin"), db: Session = Depends(get_db)):
     try:
         count = db.query(USBEventDB).count()
@@ -1191,7 +1208,7 @@ def clear_usb_events(admin: str = Query("admin"), db: Session = Depends(get_db))
 
 
 # ============= DASHBOARD ENDPOINT =============
-@app.get("/dashboard")
+@app.get("/dashboard", dependencies=[Depends(get_current_admin)])
 def get_dashboard(db: Session = Depends(get_db)):
     try:
         update_endpoint_statuses(db)
@@ -1228,7 +1245,7 @@ def get_dashboard(db: Session = Depends(get_db)):
 
 
 # ============= EMPLOYEE MONITORING ENDPOINT =============
-@app.get("/employee-monitoring")
+@app.get("/employee-monitoring", dependencies=[Depends(get_current_admin)])
 def get_employee_monitoring(db: Session = Depends(get_db)):
     try:
         employees = db.query(EmployeeDB).all()
@@ -1360,7 +1377,7 @@ def receive_endpoint_session(event: EndpointSessionEvent, db: Session = Depends(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/login-events")
+@app.get("/login-events", dependencies=[Depends(get_current_admin)])
 def get_login_events(
     agent_id: str = "",
     hostname: str = "",
@@ -1412,7 +1429,7 @@ def get_login_events(
 
 
 # ============= ENDPOINT DETAILS / TIMELINE =============
-@app.get("/devices/{device_id}/details")
+@app.get("/devices/{device_id}/details", dependencies=[Depends(get_current_admin)])
 def get_device_details(device_id: str, db: Session = Depends(get_db)):
     update_endpoint_statuses(db)
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
@@ -1457,7 +1474,7 @@ def get_device_details(device_id: str, db: Session = Depends(get_db)):
     }
 
 
-@app.get("/devices/{device_id}/timeline")
+@app.get("/devices/{device_id}/timeline", dependencies=[Depends(get_current_admin)])
 def get_device_timeline(device_id: str, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)):
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
     if not device:
@@ -1514,7 +1531,7 @@ def get_device_timeline(device_id: str, limit: int = Query(100, ge=1, le=500), d
     }
 
 
-@app.get("/audit-logs")
+@app.get("/audit-logs", dependencies=[Depends(get_current_admin)])
 def get_audit_logs(limit: int = Query(200, ge=1, le=1000), db: Session = Depends(get_db)):
     logs = db.query(AuditLogDB).order_by(AuditLogDB.created_at.desc()).limit(limit).all()
     return {
@@ -1566,7 +1583,7 @@ def report_rows(report_type: str, db: Session):
     raise HTTPException(status_code=404, detail="Unknown report type")
 
 
-@app.get("/reports/{report_type}/csv")
+@app.get("/reports/{report_type}/csv", dependencies=[Depends(get_current_admin)])
 def export_csv_report(report_type: str, db: Session = Depends(get_db)):
     headers, rows = report_rows(report_type, db)
     output = io.StringIO()
@@ -1581,7 +1598,7 @@ def export_csv_report(report_type: str, db: Session = Depends(get_db)):
     )
 
 
-@app.get("/reports/{report_type}/pdf")
+@app.get("/reports/{report_type}/pdf", dependencies=[Depends(get_current_admin)])
 def export_pdf_report(report_type: str, db: Session = Depends(get_db)):
     if not REPORTLAB_AVAILABLE:
         raise HTTPException(status_code=500, detail="ReportLab is not installed")
@@ -1616,7 +1633,7 @@ def export_pdf_report(report_type: str, db: Session = Depends(get_db)):
 
 
 # ============= SETTINGS ENDPOINTS =============
-@app.get("/settings")
+@app.get("/settings", dependencies=[Depends(get_current_admin)])
 def get_settings(db: Session = Depends(get_db)):
     try:
         settings = db.query(SettingsDB).all()
@@ -1633,7 +1650,7 @@ def get_settings(db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/settings")
+@app.post("/settings", dependencies=[Depends(get_current_admin)])
 def update_settings(settings: SettingsUpdate, db: Session = Depends(get_db)):
     try:
         db.query(SettingsDB).delete()
@@ -1661,7 +1678,7 @@ def update_settings(settings: SettingsUpdate, db: Session = Depends(get_db)):
 
 
 # ============= EMAIL ENDPOINTS =============
-@app.post("/test-email")
+@app.post("/test-email", dependencies=[Depends(get_current_admin)])
 def test_email(request: SendEmailRequest, db: Session = Depends(get_db)):
     try:
         settings = db.query(SettingsDB).all()
@@ -1695,7 +1712,7 @@ def test_email(request: SendEmailRequest, db: Session = Depends(get_db)):
         return {"success": False, "message": str(e)}
 
 
-@app.post("/send-email")
+@app.post("/send-email", dependencies=[Depends(get_current_admin)])
 def send_email_notification(request: SendEmailRequest, db: Session = Depends(get_db)):
     try:
         settings = db.query(SettingsDB).all()
@@ -1740,7 +1757,7 @@ def send_email_notification(request: SendEmailRequest, db: Session = Depends(get
         return {"success": False, "message": str(e)}
 
 
-@app.get("/notifications")
+@app.get("/notifications", dependencies=[Depends(get_current_admin)])
 def get_notifications(db: Session = Depends(get_db)):
     try:
         notifications = db.query(NotificationDB).order_by(
@@ -1768,7 +1785,17 @@ def get_notifications(db: Session = Depends(get_db)):
 # ============= REALTIME WEBSOCKET =============
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await realtime_hub.connect(websocket)
+    auth_protocol = next(
+        (value for value in websocket.scope.get("subprotocols", []) if value.startswith("bearer.")),
+        None,
+    )
+    token = auth_protocol.removeprefix("bearer.") if auth_protocol else ""
+    claims = verify_access_token(token) if token else None
+    if not claims or claims.get("role") not in ("Admin", "SuperAdmin"):
+        await websocket.close(code=1008)
+        return
+
+    await realtime_hub.connect(websocket, subprotocol="sentinel-auth")
     try:
         await websocket.send_json({
             "type": "connected",
@@ -1785,7 +1812,7 @@ async def websocket_endpoint(websocket: WebSocket):
         realtime_hub.disconnect(websocket)
 
 
-@app.get("/realtime/status")
+@app.get("/realtime/status", dependencies=[Depends(get_current_admin)])
 def realtime_status():
     return {
         "realtime_enabled": True,

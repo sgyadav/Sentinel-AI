@@ -56,6 +56,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
                 f"sha256:{expected_hash}",
             )
 
+        # A few legacy setup scripts stored a bare SHA-256 hex digest.
+        if len(hashed_password) == 64:
+            try:
+                bytes.fromhex(hashed_password)
+            except ValueError:
+                return False
+            expected_hash = hashlib.sha256(
+                plain_password.encode("utf-8")
+            ).hexdigest()
+            return hmac.compare_digest(hashed_password.lower(), expected_hash)
+
         return False
 
     except Exception as exc:

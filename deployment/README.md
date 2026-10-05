@@ -10,14 +10,20 @@ This deployment profile is for an internal company or office LAN:
 
 Install Docker Desktop or Docker Engine on the server.
 
-Copy `.env.example` to `.env` in the project root and edit it:
+Copy `.env.example` to `.env` in the project root. Set a random `SECRET_KEY` of at least 32 characters and set `SENTINEL_INITIAL_ADMIN_PASSWORD` before first startup. Keep `.env` private and do not commit it.
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-For a first LAN deployment, the defaults are enough. If the dashboard should run on a different port, change:
+For example, generate a JWT secret with Python:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Set `SENTINEL_CORS_ORIGINS` to the browser origin(s) that will open the dashboard. If the dashboard should run on a different port, change:
 
 ```env
 SENTINEL_HTTP_PORT=80
@@ -91,7 +97,7 @@ powershell -ExecutionPolicy Bypass -File .\deployment\uninstall-agent-windows.ps
 Before using this outside a trusted LAN:
 
 - Put the dashboard behind HTTPS.
-- Replace demo login behavior with enforced authentication and roles.
+- Keep `SECRET_KEY` and `SENTINEL_INITIAL_ADMIN_PASSWORD` out of Git and rotate the initial admin password after first login.
 - Configure regular backups of the Docker volume `sentinel_data`.
 - Add API keys for threat-intelligence providers if those pages are used.
 - Decide who can close incidents and who can run endpoint response actions.

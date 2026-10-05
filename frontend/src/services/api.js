@@ -1,7 +1,10 @@
 import axios from "axios";
 
+const DEFAULT_API_URL = "https://sentinel-ai-fz5u.onrender.com";
+const API_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/+$/, "");
+
 const API = axios.create({
-  baseURL: "https://sentinel-ai-fz5u.onrender.com",
+  baseURL: API_URL,
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",

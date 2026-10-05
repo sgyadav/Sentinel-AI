@@ -43,8 +43,16 @@ def init_database():
                 print("[OK] Admin user already exists")
                 return
             
-            # Create admin
-            hashed_password = hash_password("Admin1234")
+            # Create admin only when an operator explicitly supplies a password.
+            initial_password = (
+                os.getenv("SENTINEL_INITIAL_ADMIN_PASSWORD")
+                or os.getenv("INITIAL_ADMIN_PASSWORD")
+                or os.getenv("ADMIN_PASSWORD")
+            )
+            if not initial_password:
+                print("[ERROR] Set SENTINEL_INITIAL_ADMIN_PASSWORD before creating the admin account")
+                return
+            hashed_password = hash_password(initial_password)
             admin_user = UserSimple(
                 username="admin",
                 email="admin@sentinelai.local",
@@ -57,7 +65,7 @@ def init_database():
             db.commit()
             print("[OK] Admin user created successfully")
             print("[INFO] Username: admin")
-            print("[INFO] Password: Admin1234")
+            print("[INFO] Set the admin password through the deployment environment")
             
         except Exception as e:
             print(f"[ERROR] Error creating admin user: {str(e)}")
