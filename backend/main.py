@@ -22,7 +22,7 @@ import io
 import json
 import os
 import re
-import sqlite3
+import time
 from datetime import datetime, timedelta, time as dt_time, timezone
 from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Body, WebSocket, WebSocketDisconnect
@@ -30,9 +30,10 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from auth.password import hash_password, verify_password
 from auth.jwt_handler import create_access_token, verify_access_token
-from core.security import get_current_admin
-from sqlalchemy import create_engine, text, or_, func
-from sqlalchemy.orm import sessionmaker, Session
+from core.security import get_current_admin, get_current_agent, refresh_user_claims
+from database import engine, SessionLocal, get_db
+from sqlalchemy import inspect as sqlalchemy_inspect, text, or_, func
+from sqlalchemy.orm import Session
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -50,24 +51,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============= DATABASE SETUP =============
-BASE_DIR = Path(__file__).resolve().parent
-DATABASE_PATH = BASE_DIR / "sentinel.db"
-DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 HEARTBEAT_ONLINE_SECONDS = 30
 DEFAULT_ORG_ID = "default"
 LOCAL_TZ = timezone(timedelta(hours=5, minutes=30), "IST")
-
-
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ============= FASTAPI APP =============
@@ -77,7 +63,7 @@ _configured_origins = (
     os.getenv("SENTINEL_CORS_ORIGINS")
     or os.getenv("CORS_ORIGINS")
     or os.getenv("FRONTEND_URL")
-    or "*"
+    or ""
 )
 ALLOWED_ORIGINS = [origin.strip().rstrip("/") for origin in _configured_origins.split(",") if origin.strip()]
 
@@ -87,6 +73,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -308,13 +295,25 @@ def log_audit(db: Session, action: str, resource_type: str = "", resource_id: st
 class RealtimeHub:
     def __init__(self):
         self.clients = set()
+        self.client_users = {}
 
-    async def connect(self, websocket: WebSocket, subprotocol=None):
+    async def connect(self, websocket: WebSocket, username: str, subprotocol=None):
         await websocket.accept(subprotocol=subprotocol)
         self.clients.add(websocket)
+        self.client_users[websocket] = username
 
     def disconnect(self, websocket: WebSocket):
         self.clients.discard(websocket)
+        self.client_users.pop(websocket, None)
+
+    async def disconnect_user(self, username: str):
+        for client, client_username in list(self.client_users.items()):
+            if client_username == username:
+                try:
+                    await client.close(code=1008, reason="Session revoked")
+                except Exception:
+                    pass
+                self.disconnect(client)
 
     async def broadcast(self, message: dict):
         stale = []
@@ -344,70 +343,76 @@ def publish_realtime(event_type: str, payload: dict):
 
 
 def ensure_schema():
-    """Apply additive SQLite migrations for older local databases."""
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
-    try:
-        cursor = conn.cursor()
-        table_columns = {}
-        for (table_name,) in cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
-            table_columns[table_name] = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})").fetchall()}
+    """Apply additive migrations to existing tables across supported SQL dialects."""
+    if engine.dialect.name == "sqlite" and engine.url.database not in (None, ":memory:"):
+        Path(engine.url.database).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
-        def add_column(table, column, definition):
-            if table in table_columns and column not in table_columns[table]:
-                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-                table_columns[table].add(column)
+    inspector = sqlalchemy_inspect(engine)
+    table_columns = {
+        table_name: {column["name"] for column in inspector.get_columns(table_name)}
+        for table_name in inspector.get_table_names()
+    }
+    migrations = {
+        "devices": {
+            "device_id": "TEXT",
+            "device_type": "TEXT DEFAULT 'Laptop'",
+            "os_version": "TEXT DEFAULT ''",
+        },
+        "processes": {
+            "agent_id": "TEXT DEFAULT ''",
+            "classification": "TEXT DEFAULT 'Safe'",
+            "risk_score": "REAL DEFAULT 0",
+            "reason": "TEXT DEFAULT ''",
+        },
+        "usb_events": {"agent_id": "TEXT DEFAULT ''"},
+        "threats": {
+            "org_id": "TEXT DEFAULT 'default'",
+            "confidence": "REAL DEFAULT 0",
+            "detection_method": "TEXT DEFAULT ''",
+            "file_path": "TEXT DEFAULT ''",
+            "file_hash": "TEXT DEFAULT ''",
+            "action_taken": "TEXT DEFAULT ''",
+            "resolved_at": "TIMESTAMP",
+            "created_at": "TIMESTAMP",
+        },
+        "users": {"token_version": "INTEGER NOT NULL DEFAULT 0"},
+    }
 
-        add_column("devices", "device_id", "TEXT")
-        add_column("devices", "device_type", "TEXT DEFAULT 'Laptop'")
-        add_column("devices", "os_version", "TEXT DEFAULT ''")
-        add_column("processes", "agent_id", "TEXT DEFAULT ''")
-        add_column("processes", "classification", "TEXT DEFAULT 'Safe'")
-        add_column("processes", "risk_score", "REAL DEFAULT 0")
-        add_column("processes", "reason", "TEXT DEFAULT ''")
-        add_column("usb_events", "agent_id", "TEXT DEFAULT ''")
-        add_column("threats", "org_id", "TEXT DEFAULT 'default'")
-        add_column("threats", "confidence", "REAL DEFAULT 0")
-        add_column("threats", "detection_method", "TEXT DEFAULT ''")
-        add_column("threats", "file_path", "TEXT DEFAULT ''")
-        add_column("threats", "file_hash", "TEXT DEFAULT ''")
-        add_column("threats", "action_taken", "TEXT DEFAULT ''")
-        add_column("threats", "resolved_at", "DATETIME")
-        add_column("threats", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP")
+    with engine.begin() as connection:
+        for table_name, columns in migrations.items():
+            if table_name not in table_columns:
+                continue
+            for column_name, definition in columns.items():
+                if column_name not in table_columns[table_name]:
+                    connection.execute(text(
+                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+                    ))
+                    table_columns[table_name].add(column_name)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS endpoint_sessions (
-                id INTEGER PRIMARY KEY,
-                agent_id VARCHAR(255) NOT NULL,
-                hostname VARCHAR(255) NOT NULL,
-                username VARCHAR(255) NOT NULL,
-                ip_address VARCHAR(45) DEFAULT '',
-                login_time DATETIME NOT NULL,
-                logout_time DATETIME,
-                session_duration INTEGER,
-                status VARCHAR(50) DEFAULT 'Active',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS audit_logs (
-                id INTEGER PRIMARY KEY,
-                actor VARCHAR(255) DEFAULT 'system',
-                action VARCHAR(255) NOT NULL,
-                resource_type VARCHAR(100) DEFAULT '',
-                resource_id VARCHAR(255) DEFAULT '',
-                details TEXT DEFAULT '',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("UPDATE devices SET device_type = COALESCE(device_type, 'Laptop')")
-        cursor.execute("UPDATE devices SET os_version = COALESCE(os_version, '')")
-        cursor.execute("UPDATE devices SET device_id = 'AGT-' || printf('%05d', id) WHERE device_id IS NULL OR TRIM(device_id) = ''")
-        if "processes" in table_columns:
-            cursor.execute("DELETE FROM processes WHERE name IS NULL OR TRIM(name) = ''")
-        conn.commit()
-    finally:
-        conn.close()
+        if "devices" in table_columns:
+            connection.execute(text(
+                "UPDATE devices SET device_type = COALESCE(device_type, 'Laptop')"
+            ))
+            connection.execute(text(
+                "UPDATE devices SET os_version = COALESCE(os_version, '')"
+            ))
+            missing_ids = connection.execute(text(
+                "SELECT id FROM devices WHERE device_id IS NULL OR TRIM(device_id) = ''"
+            )).fetchall()
+            for (device_pk,) in missing_ids:
+                connection.execute(
+                    text("UPDATE devices SET device_id = :device_id WHERE id = :device_pk"),
+                    {"device_id": f"AGT-{device_pk:05d}", "device_pk": device_pk},
+                )
+
+        if "threats" in table_columns and "created_at" in table_columns["threats"]:
+            connection.execute(text(
+                "UPDATE threats SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
+            ))
+        if "processes" in table_columns and "name" in table_columns["processes"]:
+            connection.execute(text(
+                "DELETE FROM processes WHERE name IS NULL OR TRIM(name) = ''"
+            ))
 
 
 # ============= STARTUP =============
@@ -461,6 +466,8 @@ def health():
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     username = (request.username or "").strip()
     password = request.password or ""
+    if len(password) > 128:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     logger.info(f"Login attempt for user: {username}")
     user = db.query(UserDB).filter(UserDB.username == username).first()
 
@@ -477,7 +484,9 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
     stored_password = user.password or ""
 
-    password_matches = verify_password(password, stored_password) or stored_password == password
+    password_matches = bool(password) and (
+        verify_password(password, stored_password) or stored_password == password
+    )
     if not password_matches:
         logger.warning("Login rejected for user: %s", username)
         db.add(LoginHistoryDB(
@@ -504,6 +513,19 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    try:
+        access_token = create_access_token({
+            "sub": user.username,
+            "role": user.role,
+            "ver": user.token_version or 0,
+        })
+    except RuntimeError:
+        logger.error("JWT secret is not configured; login is unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured",
+        )
+
     db.add(LoginHistoryDB(
         username=user.username,
         ip_address="0.0.0.0",
@@ -516,25 +538,37 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     logger.info(f"User {username} logged in successfully")
     return {
         "success": True,
-        "access_token": create_access_token({"sub": user.username, "role": user.role}),
+        "access_token": access_token,
         "user": {"username": user.username, "role": user.role, "email": user.email}
     }
 
 
 @app.post("/auth/logout", dependencies=[Depends(get_current_admin)])
-def logout(username: str = Body("admin", embed=True), db: Session = Depends(get_db)):
-    last_login = db.query(LoginHistoryDB).filter(
+async def logout(
+    username: str = Body("admin", embed=True),
+    current_admin: dict = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    username = current_admin["sub"]
+    user = db.query(UserDB).filter(UserDB.username == username).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
+    # A per-user version invalidates all outstanding tokens for this account,
+    # including copies held by another browser or device.
+    user.token_version = (user.token_version or 0) + 1
+    open_logins = db.query(LoginHistoryDB).filter(
         LoginHistoryDB.username == username,
         LoginHistoryDB.status == "Success",
         LoginHistoryDB.logout_time == None
-    ).order_by(LoginHistoryDB.login_time.desc()).first()
-    if last_login:
-        now = datetime.utcnow()
+    ).all()
+    now = datetime.utcnow()
+    for last_login in open_logins:
         last_login.logout_time = now
         login_time = parse_datetime(last_login.login_time) or now
-        last_login.session_duration = int((now - login_time).total_seconds())
+        last_login.session_duration = max(0, int((now - login_time).total_seconds()))
     log_audit(db, "Admin Logout", "user", username, actor=username)
     db.commit()
+    await realtime_hub.disconnect_user(username)
     publish_realtime("audit", {"action": "Admin Logout", "username": username})
     return {"success": True, "message": "Logged out"}
 
@@ -888,7 +922,7 @@ def clear_threats(admin: str = Query("admin"), db: Session = Depends(get_db)):
 
 
 # ============= HEARTBEAT ENDPOINT =============
-@app.post("/heartbeat")
+@app.post("/heartbeat", dependencies=[Depends(get_current_agent)])
 def heartbeat(data: Heartbeat, db: Session = Depends(get_db)):
     try:
         incoming_agent_id = normalize_agent_id(data.agent_id or data.device_uuid)
@@ -973,7 +1007,7 @@ def heartbeat(data: Heartbeat, db: Session = Depends(get_db)):
 
 
 # ============= PROCESS ENDPOINTS =============
-@app.post("/processes")
+@app.post("/processes", dependencies=[Depends(get_current_agent)])
 def receive_processes(payload=Body(...), db: Session = Depends(get_db)):
     try:
         if isinstance(payload, dict):
@@ -1100,7 +1134,7 @@ def clear_processes(admin: str = Query("admin"), db: Session = Depends(get_db)):
 
 
 # ============= USB EVENTS ENDPOINTS =============
-@app.post("/usb-events")
+@app.post("/usb-events", dependencies=[Depends(get_current_agent)])
 def receive_usb_event(event: dict, db: Session = Depends(get_db)):
     try:
         usb = USBEventDB(
@@ -1283,7 +1317,7 @@ def get_employee_monitoring(db: Session = Depends(get_db)):
 
 
 # ============= LOGIN / LOGOUT MONITORING =============
-@app.post("/endpoint-sessions")
+@app.post("/endpoint-sessions", dependencies=[Depends(get_current_agent)])
 def receive_endpoint_session(event: EndpointSessionEvent, db: Session = Depends(get_db)):
     try:
         agent_id = normalize_agent_id(event.agent_id)
@@ -1791,11 +1825,20 @@ async def websocket_endpoint(websocket: WebSocket):
     )
     token = auth_protocol.removeprefix("bearer.") if auth_protocol else ""
     claims = verify_access_token(token) if token else None
+    if claims:
+        with SessionLocal() as db:
+            claims = refresh_user_claims(claims, db)
     if not claims or claims.get("role") not in ("Admin", "SuperAdmin"):
         await websocket.close(code=1008)
         return
 
-    await realtime_hub.connect(websocket, subprotocol="sentinel-auth")
+    await realtime_hub.connect(
+        websocket,
+        username=claims["sub"],
+        subprotocol="sentinel-auth",
+    )
+    expires_at = float(claims.get("exp", 0))
+    next_token_check = time.monotonic() + 30
     try:
         await websocket.send_json({
             "type": "connected",
@@ -1803,7 +1846,28 @@ async def websocket_endpoint(websocket: WebSocket):
             "message": "SENTINEL AI realtime monitoring connected"
         })
         while True:
-            message = await websocket.receive_text()
+            remaining = expires_at - time.time()
+            if remaining <= 0:
+                await websocket.close(code=1008, reason="Session expired")
+                break
+            until_token_check = next_token_check - time.monotonic()
+            if until_token_check <= 0:
+                with SessionLocal() as db:
+                    current_claims = refresh_user_claims(dict(claims), db)
+                if not current_claims or current_claims.get("role") not in ("Admin", "SuperAdmin"):
+                    await websocket.close(code=1008, reason="Session revoked")
+                    break
+                next_token_check = time.monotonic() + 30
+                continue
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=min(until_token_check, remaining),
+                )
+            except asyncio.TimeoutError:
+                # Re-enter the loop to check expiry or the persisted token
+                # version, even if this socket continues receiving messages.
+                continue
             if message.lower() == "ping":
                 await websocket.send_json({"type": "pong", "timestamp": datetime.utcnow().isoformat()})
     except WebSocketDisconnect:

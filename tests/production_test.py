@@ -7,9 +7,13 @@ import requests
 import json
 import time
 import sys
+import os
 from datetime import datetime
 
 BASE_URL = "http://127.0.0.1:8000"
+ADMIN_USER = os.getenv("SENTINEL_ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.getenv("SENTINEL_ADMIN_PASSWORD")
+AGENT_TOKEN = os.getenv("SENTINEL_AGENT_TOKEN")
 
 # Color codes for output
 GREEN = "\033[92m"
@@ -57,11 +61,18 @@ class ProductionTests:
     def test_authentication(self):
         print(f"\n{BLUE}=== PHASE: AUTHENTICATION ==={RESET}\n")
 
+        if not ADMIN_PASSWORD:
+            self.results.add_fail(
+                "Admin credentials configured",
+                "Set SENTINEL_ADMIN_PASSWORD in the environment; do not use a repository default.",
+            )
+            return
+
         # Login
         try:
             response = requests.post(
                 f"{BASE_URL}/auth/login",
-                json={"username": "admin", "password": "Admin1234"}
+                json={"username": ADMIN_USER, "password": ADMIN_PASSWORD}
             )
             if response.status_code == 200:
                 data = response.json()
@@ -79,7 +90,7 @@ class ProductionTests:
         try:
             response = requests.post(
                 f"{BASE_URL}/auth/login",
-                json={"username": "admin", "password": "wrongpassword"}
+                json={"username": ADMIN_USER, "password": "definitely-invalid-password"}
             )
             if response.status_code == 401:
                 self.results.add_pass("Wrong password rejected")
@@ -174,6 +185,13 @@ class ProductionTests:
             return
 
         # Test heartbeat (auto-register)
+        if not AGENT_TOKEN:
+            self.results.add_fail(
+                "Agent credential configured",
+                "Set SENTINEL_AGENT_TOKEN before checking authenticated telemetry ingestion.",
+            )
+            return
+
         heartbeat_data = {
             "device_uuid": "test-uuid-1",
             "hostname": "PC-AUTO",
@@ -191,7 +209,11 @@ class ProductionTests:
             "status": "Online"
         }
         try:
-            response = requests.post(f"{BASE_URL}/heartbeat", json=heartbeat_data, headers=headers)
+            response = requests.post(
+                f"{BASE_URL}/heartbeat",
+                json=heartbeat_data,
+                headers={"Authorization": f"Bearer {AGENT_TOKEN}"},
+            )
             if response.status_code == 200:
                 self.results.add_pass("Heartbeat (auto-register) works", "PC-AUTO registered")
             else:

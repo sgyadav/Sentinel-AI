@@ -12,10 +12,12 @@ services:
     environment:
       - DEBUG=False
       - DATABASE_URL=sqlite:////data/sentinel.db
-      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-this-in-production-minimum-32-chars}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - SENTINEL_INITIAL_ADMIN_PASSWORD=${SENTINEL_INITIAL_ADMIN_PASSWORD:-}
+      - SENTINEL_AGENT_TOKEN=${SENTINEL_AGENT_TOKEN:-}
       - ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=480
-      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
+      - SENTINEL_CORS_ORIGINS=${SENTINEL_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000}
       - REALTIME_ENABLED=true
     volumes:
       - ./backend:/app

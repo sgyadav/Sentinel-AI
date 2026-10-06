@@ -1,5 +1,7 @@
 # 🚀 SENTINEL AI - PRODUCTION READY SYSTEM
 
+> Historical implementation notes, not a current production-readiness claim. Check the root README and CI workflow for current setup and verification instructions.
+
 ## ✅ COMPLETE FEATURES NOW AVAILABLE
 
 Refresh http://localhost:5173 to see all updates

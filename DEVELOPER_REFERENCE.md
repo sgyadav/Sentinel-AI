@@ -85,20 +85,40 @@ Sentinel AI/
 ### Authentication
 ```bash
 # Login
+# Set SENTINEL_ADMIN_PASSWORD in your shell before using this example.
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "Admin1234"}'
+  -d '{"username": "admin", "password": "YOUR_ADMIN_PASSWORD"}'
 
 # Response includes: access_token
+```
+
+All dashboard API examples below require the token from that response, including employee and device operations, reports, settings, and dashboard reads:
+
+```bash
+curl http://localhost:8000/employees \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Agent telemetry ingestion uses a separate bearer credential. Configure `SENTINEL_AGENT_TOKEN` with a random value of at least 32 characters on the backend and on the agent; never use an admin JWT or `SECRET_KEY` as the agent token.
+
+```bash
+curl -X POST http://localhost:8000/heartbeat \
+  -H "Authorization: Bearer $SENTINEL_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"hostname":"PC-001","username":"operator","ip_address":"192.168.1.100","operating_system":"Windows","status":"Online"}'
 ```
 
 ### Employees
 ```bash
 # List
-curl http://localhost:8000/employees
+curl http://localhost:8000/employees \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 # Create
 curl -X POST http://localhost:8000/employees \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{
     "employee_id": "EMP-001",
     "name": "John",
@@ -109,19 +129,25 @@ curl -X POST http://localhost:8000/employees \
 
 # Update
 curl -X PUT http://localhost:8000/employees/EMP-001 \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{...updated data...}'
 
 # Delete
-curl -X DELETE http://localhost:8000/employees/EMP-001
+curl -X DELETE http://localhost:8000/employees/EMP-001 \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ### Devices (Endpoints)
 ```bash
 # List
-curl http://localhost:8000/devices
+curl http://localhost:8000/devices \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 # Register
 curl -X POST http://localhost:8000/devices \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{
     "hostname": "PC-001",
     "ip_address": "192.168.1.100",
@@ -131,6 +157,8 @@ curl -X POST http://localhost:8000/devices \
 
 # Heartbeat (auto-register)
 curl -X POST http://localhost:8000/heartbeat \
+  -H "Authorization: Bearer $SENTINEL_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{
     "hostname": "PC-AUTO",
     "cpu_usage": 25.5,
@@ -141,16 +169,20 @@ curl -X POST http://localhost:8000/heartbeat \
 ### Monitoring
 ```bash
 # USB Events
-curl http://localhost:8000/usb-events
+curl http://localhost:8000/usb-events \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 # Live Processes
-curl http://localhost:8000/processes/live
+curl http://localhost:8000/processes/live \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 # Threats
-curl http://localhost:8000/threats
+curl http://localhost:8000/threats \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 # Dashboard
-curl http://localhost:8000/dashboard
+curl http://localhost:8000/dashboard \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ---
@@ -189,14 +221,13 @@ conn.close()
 
 ### Token Format
 ```
-access_token: "token_admin_TIMESTAMP"
-expires_in: 480 minutes (8 hours)
+access_token: JWT returned by POST /auth/login
+expires_in: 60 minutes by default (configurable with ACCESS_TOKEN_EXPIRE_MINUTES)
 ```
 
 ### Roles
 - `Admin` - Full system access
-- `Analyst` - Read monitoring data
-- `User` - Basic access
+- Other roles do not access administrator routes
 
 ### Password Hashing
 ```python
@@ -362,7 +393,7 @@ pip list | grep -E "psutil|requests"
 - [ ] Read `IMPLEMENTATION_SUMMARY.md`
 - [ ] Run all 3 terminals (backend, frontend, agent)
 - [ ] Access frontend at http://localhost:5173
-- [ ] Login with admin/Admin1234
+- [ ] Login with the admin password configured for this environment
 - [ ] Run `tests/production_test.py`
 - [ ] All tests should pass ✅
 - [ ] Verify dashboard shows metrics

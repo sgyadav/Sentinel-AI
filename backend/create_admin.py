@@ -3,9 +3,13 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import func
 from auth.password import hash_password
+from core.config import normalize_database_url
 
-DATABASE_URL = "sqlite:///./sentinel.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./sentinel.db"))
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 

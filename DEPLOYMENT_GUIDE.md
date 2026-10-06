@@ -1,5 +1,7 @@
 # SENTINEL AI v1.0 - PRODUCTION DEPLOYMENT GUIDE
 
+> This guide contains historical implementation notes. The response codes below assume valid credentials: dashboard APIs need an admin bearer token and agent ingestion APIs need `SENTINEL_AGENT_TOKEN`. See the root README and `deployment/README.md` for current deployment steps.
+
 ## ✅ COMPLETED PHASES
 
 ### Phase 1: Backend Stabilization ✅
@@ -9,7 +11,7 @@
 - [x] All API endpoints return 200 OK
 - [x] Foreign keys verified
 
-**Verified Endpoints:**
+**Endpoint response codes when properly authenticated:**
 ```
 GET  /health                  → 200
 POST /auth/login              → 200
@@ -24,11 +26,11 @@ DELETE /devices/{id}          → 200
 GET  /assignments             → 200
 POST /assignments             → 200
 GET  /threats                 → 200
-POST /heartbeat               → 200 (auto-register)
+POST /heartbeat               → 200 (auto-register; agent bearer token required)
 GET  /processes/live          → 200
-POST /processes               → 200
+POST /processes               → 200 (agent bearer token required)
 GET  /usb-events              → 200
-POST /usb-events              → 200
+POST /usb-events              → 200 (agent bearer token required)
 GET  /dashboard               → 200
 GET  /settings                → 200
 POST /settings                → 200
@@ -77,6 +79,8 @@ GET  /notifications           → 200
 Agent Start → Collect System Info → POST /heartbeat → 
 Backend Creates Endpoint → Monitoring Starts
 ```
+
+Telemetry ingestion requires `Authorization: Bearer <SENTINEL_AGENT_TOKEN>`. Configure a random token of at least 32 characters on the backend and agent. Do not reuse the admin JWT signing key.
 
 ### Phase 5: Dashboard ✅
 - [x] Frontend dashboard with stat cards
@@ -158,13 +162,11 @@ python agent/agent.py
 - Vite config: `frontend/vite.config.js`
 - API URL: Configurable in `.env`
 
-## 🔐 DEFAULT CREDENTIALS
+## 🔐 ADMIN ACCOUNT
 
-| Username | Password |
-|----------|----------|
-| admin    | Admin1234 |
+There is no repository default password. On first startup, the backend creates the `admin` account only when `SENTINEL_INITIAL_ADMIN_PASSWORD` is set. Existing databases keep their current admin password; reset it through the deployment's approved password-reset process.
 
-**⚠️ CHANGE IN PRODUCTION**
+Set `SECRET_KEY` to a random value of at least 32 characters and restrict `SENTINEL_CORS_ORIGINS` to the deployed frontend origin. Never commit secret values.
 
 ## 📊 DATABASE SCHEMA
 
@@ -209,13 +211,13 @@ Content-Type: application/json
 
 {
   "username": "admin",
-  "password": "Admin1234"
+  "password": "YOUR_ADMIN_PASSWORD"
 }
 
 Response:
 {
   "success": true,
-  "access_token": "token_admin_1234567890",
+  "access_token": "JWT_RETURNED_BY_LOGIN",
   "user": {
     "username": "admin",
     "role": "Admin",
@@ -227,6 +229,7 @@ Response:
 ### Heartbeat (Auto-Register)
 ```bash
 POST /heartbeat
+Authorization: Bearer <SENTINEL_AGENT_TOKEN>
 Content-Type: application/json
 
 {

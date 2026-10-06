@@ -1,5 +1,5 @@
 import requests
-from config import SERVER_URL
+from config import SERVER_URL, AGENT_TOKEN
 
 
 def send_data(data):
@@ -9,6 +9,7 @@ def send_data(data):
         response = requests.post(
             SERVER_URL,
             json=data,
+            headers={"Authorization": f"Bearer {AGENT_TOKEN}"} if AGENT_TOKEN else {},
             timeout=5
         )
 

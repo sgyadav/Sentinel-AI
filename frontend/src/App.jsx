@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import API from "./services/api";
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
-  const [currentPage, setCurrentPage] = useState('login');
   const [username, setUsername] = useState(localStorage.getItem('username') || '');
   const [message, setMessage] = useState({ type: '', text: '' });
   const [loading, setLoading] = useState(false);
@@ -14,7 +13,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [employees, setEmployees] = useState([]);
   const [devices, setDevices] = useState([]);
-  const [assignments, setAssignments] = useState([]);
   const [threats, setThreats] = useState([]);
   const [liveProcesses, setLiveProcesses] = useState([]);
   const [usbEvents, setUsbEvents] = useState([]);
@@ -70,14 +68,6 @@ export default function App() {
     operating_system: '',
     os_version: '',
     device_type: 'Laptop'
-  });
-
-  const [showAssignment, setShowAssignment] = useState(false);
-  const [showEditAssignment, setShowEditAssignment] = useState(false);
-  const [editingAssignment, setEditingAssignment] = useState(null);
-  const [assignmentForm, setAssignmentForm] = useState({
-    employee_id: '',
-    device_id: ''
   });
 
   const showMsg = (type, text) => {
@@ -141,11 +131,11 @@ export default function App() {
     return `${minutes}m`;
   };
 
-  const periodParams = (period, startDate, endDate) => ({
+  const periodParams = useCallback((period, startDate, endDate) => ({
     period,
     ...(period === 'custom' && startDate ? { start_date: startDate } : {}),
     ...(period === 'custom' && endDate ? { end_date: endDate } : {})
-  });
+  }), []);
 
   const downloadCsv = (filename, headers, rows) => {
     const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -158,8 +148,45 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const openReport = (type, format) => {
-    window.open(`${API.defaults.baseURL}/reports/${type}/${format}`, '_blank');
+  const openReport = async (type, format) => {
+    try {
+      const response = await API.get(`/reports/${type}/${format}`, { responseType: 'blob' });
+      const disposition = response.headers['content-disposition'] || '';
+      let filename = `${type}_report.${format}`;
+      const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      const plainFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+      try {
+        filename = encodedFilename
+          ? decodeURIComponent(encodedFilename)
+          : (plainFilename || filename);
+      } catch {
+        filename = plainFilename || filename;
+      }
+      filename = filename.replace(/[\\/:*?"<>|]/g, '_');
+
+      const blob = new Blob([response.data], {
+        type: response.headers['content-type'] || response.data.type || 'application/octet-stream'
+      });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    } catch (error) {
+      let detail = error.response?.data?.detail;
+      if (error.response?.data instanceof Blob) {
+        const responseText = await error.response.data.text();
+        try {
+          detail = JSON.parse(responseText).detail || responseText;
+        } catch {
+          detail = responseText;
+        }
+      }
+      showMsg('error', detail || 'Report download failed. Please try again.');
+    }
   };
 
   const loginRows = () => loginEvents.flatMap((event) => {
@@ -193,14 +220,13 @@ export default function App() {
     setLoading(true);
     try {
       const response = await API.post('/auth/login', loginForm);
-      const { access_token, user } = response.data;
+      const { access_token } = response.data;
 
       localStorage.setItem('token', access_token);
       localStorage.setItem('username', loginForm.username);
 
       setUsername(loginForm.username);
       setIsLoggedIn(true);
-      setCurrentPage('dashboard');
       setLoginForm({ username: '', password: '' });
 
       showMsg('success', 'Logged in successfully');
@@ -212,16 +238,28 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    let revoked = false;
+    try {
+      await API.post('/auth/logout', { username });
+      revoked = true;
+    } catch (error) {
+      console.warn('Server logout could not be confirmed:', error.message);
+    }
     localStorage.clear();
     setIsLoggedIn(false);
     setUsername('');
-    setCurrentPage('login');
     setActiveTab('dashboard');
+    showMsg(
+      revoked ? 'success' : 'error',
+      revoked
+        ? 'Logged out. Existing sessions for this account were revoked.'
+        : 'Signed out on this device, but server revocation could not be confirmed.'
+    );
   };
 
   // ============= DATA FETCHING =============
-  const fetchAllData = async () => {
+  const fetchAllData = useCallback(async () => {
     try {
       const usbParams = {
         ...periodParams(usbFilter, usbStartDate, usbEndDate),
@@ -231,10 +269,9 @@ export default function App() {
         ...periodParams(loginFilter, loginStartDate, loginEndDate),
         ...(loginSearch ? { search: loginSearch } : {})
       };
-      const [empRes, devRes, assignRes, threatRes, dashRes, usbRes, procRes, loginRes] = await Promise.all([
+      const [empRes, devRes, threatRes, dashRes, usbRes, procRes, loginRes] = await Promise.all([
         API.get("/employees").catch(() => null),
         API.get("/devices").catch(() => null),
-        API.get("/assignments").catch(() => null),
         API.get("/threats").catch(() => null),
         API.get("/dashboard").catch(() => null),
         API.get("/usb-events", { params: usbParams }).catch(() => null),
@@ -244,7 +281,6 @@ export default function App() {
 
       if (empRes?.data?.employees) setEmployees(empRes.data.employees);
       if (devRes?.data?.devices) setDevices(devRes.data.devices);
-      if (assignRes?.data?.assignments) setAssignments(assignRes.data.assignments);
       if (threatRes?.data?.threats) setThreats(threatRes.data.threats);
       if (dashRes?.data?.summary) setDashboard(dashRes.data.summary);
       if (usbRes?.data?.events) setUsbEvents(usbRes.data.events);
@@ -253,16 +289,16 @@ export default function App() {
     } catch (error) {
       console.error("Fetch error:", error);
     }
-  };
+  }, [periodParams, usbFilter, usbStartDate, usbEndDate, usbSearch, loginFilter, loginStartDate, loginEndDate, loginSearch]);
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       const res = await API.get('/settings');
       setSettings(res.data);
     } catch (error) {
       console.error('Settings fetch error:', error);
     }
-  };
+  }, []);
 
   // ============= EMPLOYEE CRUD =============
   const addEmployee = async () => {
@@ -400,54 +436,6 @@ export default function App() {
     }
   };
 
-  // ============= ASSIGNMENTS =============
-  const assignDevice = async () => {
-    if (!assignmentForm.employee_id || !assignmentForm.device_id) {
-      showMsg('error', 'Please select both employee and device');
-      return;
-    }
-    setLoading(true);
-    try {
-      await API.post('/assignments', assignmentForm);
-      showMsg('success', 'Device assigned successfully');
-      setShowAssignment(false);
-      setAssignmentForm({ employee_id: '', device_id: '' });
-      await fetchAllData();
-    } catch (error) {
-      showMsg('error', error.response?.data?.detail || 'Failed to assign device');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateAssignment = async () => {
-    if (!editingAssignment) return;
-    setLoading(true);
-    try {
-      await API.put(`/assignments/${editingAssignment.id}`, assignmentForm);
-      showMsg('success', 'Assignment updated successfully');
-      setShowEditAssignment(false);
-      setEditingAssignment(null);
-      setAssignmentForm({ employee_id: '', device_id: '' });
-      await fetchAllData();
-    } catch (error) {
-      showMsg('error', error.response?.data?.detail || 'Failed to update assignment');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const deleteAssignment = async (assignmentId) => {
-    if (!window.confirm('Are you sure you want to delete this assignment?')) return;
-    try {
-      await API.delete(`/assignments/${assignmentId}`);
-      showMsg('success', 'Assignment deleted successfully');
-      await fetchAllData();
-    } catch (error) {
-      showMsg('error', error.response?.data?.detail || 'Failed to delete assignment');
-    }
-  };
-
   // ============= SETTINGS =============
   const saveSettings = async () => {
     setLoading(true);
@@ -489,7 +477,7 @@ export default function App() {
 
       return () => clearInterval(interval);
     }
-  }, [isLoggedIn, usbFilter, usbSearch, usbStartDate, usbEndDate, loginFilter, loginSearch, loginStartDate, loginEndDate]);
+  }, [isLoggedIn, fetchAllData, fetchSettings]);
 
   // ============= RENDER LOGIN PAGE =============
   if (!isLoggedIn) {

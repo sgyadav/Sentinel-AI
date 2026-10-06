@@ -6,6 +6,7 @@ SERVER_URL = os.getenv(
 )
 
 HEARTBEAT_INTERVAL = int(os.getenv("SENTINEL_HEARTBEAT_INTERVAL", "5"))
+AGENT_TOKEN = os.getenv("SENTINEL_AGENT_TOKEN", "")
 
 AGENT_NAME = "Sentinel Endpoint Agent"
 

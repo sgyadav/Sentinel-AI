@@ -1,15 +1,20 @@
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
+import os
 import logging
+from pathlib import Path
+from core.config import normalize_database_url
+from models import Base
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = "sqlite:///./sentinel.db"
+DEFAULT_DATABASE_URL = f"sqlite:///{Path(__file__).with_name('sentinel.db').as_posix()}"
+DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL))
 
 # Create engine with proper configuration
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
     echo=False  # Set to True for SQL debugging
 )
 
@@ -18,9 +23,6 @@ SessionLocal = sessionmaker(
     autoflush=False,
     bind=engine
 )
-
-Base = declarative_base()
-
 
 def get_db():
     """Get database session with proper cleanup"""

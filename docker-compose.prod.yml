@@ -8,7 +8,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/sentinel.db}
       SECRET_KEY: ${SECRET_KEY:-}
       SENTINEL_INITIAL_ADMIN_PASSWORD: ${SENTINEL_INITIAL_ADMIN_PASSWORD:-}
-      SENTINEL_CORS_ORIGINS: ${SENTINEL_CORS_ORIGINS:-http://localhost,http://127.0.0.1}
+      SENTINEL_AGENT_TOKEN: ${SENTINEL_AGENT_TOKEN:-}
+      # Same-origin Nginx access needs no CORS allowlist. Set this only when
+      # browsers access the API from a separate hosted frontend origin.
+      SENTINEL_CORS_ORIGINS: ${SENTINEL_CORS_ORIGINS:-}
     volumes:
       - sentinel_data:/data
     restart: unless-stopped
