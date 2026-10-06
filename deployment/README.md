@@ -10,14 +10,20 @@ This deployment profile is for an internal company or office LAN:
 
 Install Docker Desktop or Docker Engine on the server.
 
-Copy `.env.example` to `.env` in the project root and edit it:
+Copy `.env.example` to `.env` in the project root. Set a random `SECRET_KEY` of at least 32 characters and set `SENTINEL_INITIAL_ADMIN_PASSWORD` before first startup. Keep `.env` private and do not commit it.
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-For a first LAN deployment, the defaults are enough. If the dashboard should run on a different port, change:
+For example, generate a JWT secret with Python:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Set `SENTINEL_CORS_ORIGINS` to the browser origin(s) that will open the dashboard. If the dashboard should run on a different port, change:
 
 ```env
 SENTINEL_HTTP_PORT=80
@@ -57,20 +63,20 @@ Use the sidebar page `Endpoint Monitoring` for the real-time view.
 
 Run PowerShell as Administrator on each endpoint PC.
 
-Copy the project folder, or at least the `endpoint_agent` and `deployment` folders, to the PC. Then run:
+Copy the project folder, or at least the `agent` and `deployment` folders, to the PC. In the Render backend environment, set `SENTINEL_AGENT_TOKEN` to a separate random value of at least 32 characters. Then run this from an elevated PowerShell prompt:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\deployment\install-agent-windows.ps1 -ServerUrl "http://SERVER_IP/api/agent/status"
+powershell -ExecutionPolicy Bypass -File .\deployment\install-agent-windows.ps1 -ServerUrl "https://your-service.onrender.com"
 ```
 
-Replace `SERVER_IP` with the IP or DNS name of the Sentinel server.
+The installer securely prompts for the backend's `SENTINEL_AGENT_TOKEN`, saves it in `C:\ProgramData\SentinelAI\config.json` with access limited to SYSTEM and Administrators, and schedules the full endpoint agent. Use the backend origin only; the agent appends its telemetry routes. For a LAN server, use its HTTPS origin when available. The same shared token must be entered on each agent and rotated on all agents when changed.
 
 The script:
 
-- installs Python dependencies from `endpoint_agent/requirements.txt`;
+- installs Python dependencies from `agent/requirements.txt`;
 - creates a Windows Scheduled Task named `Sentinel Endpoint Agent`;
 - starts the agent automatically at boot;
-- posts real telemetry to the central server.
+- sends authenticated heartbeats, process snapshots, USB events, and Windows session events to the backend.
 
 To remove the agent:
 
@@ -91,7 +97,8 @@ powershell -ExecutionPolicy Bypass -File .\deployment\uninstall-agent-windows.ps
 Before using this outside a trusted LAN:
 
 - Put the dashboard behind HTTPS.
-- Replace demo login behavior with enforced authentication and roles.
+- Keep `SECRET_KEY`, `SENTINEL_AGENT_TOKEN`, and `SENTINEL_INITIAL_ADMIN_PASSWORD` out of Git. Rotate the initial admin password after first login.
+- Use a different value for `SECRET_KEY` and `SENTINEL_AGENT_TOKEN`; never use the admin JWT key as the agent credential.
 - Configure regular backups of the Docker volume `sentinel_data`.
 - Add API keys for threat-intelligence providers if those pages are used.
 - Decide who can close incidents and who can run endpoint response actions.

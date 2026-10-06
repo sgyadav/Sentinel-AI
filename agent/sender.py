@@ -2,10 +2,15 @@ import requests
 
 from config import (
     SERVER_URL,
+    AGENT_TOKEN,
     HEARTBEAT_ENDPOINT,
     PROCESS_ENDPOINT,
     USB_ENDPOINT,
 )
+
+
+def _agent_headers():
+    return {"Authorization": f"Bearer {AGENT_TOKEN}"} if AGENT_TOKEN else {}
 
 
 def send_system_info(data):
@@ -15,6 +20,7 @@ def send_system_info(data):
         response = requests.post(
             f"{SERVER_URL}{HEARTBEAT_ENDPOINT}",
             json=data,
+            headers=_agent_headers(),
             timeout=5,
         )
 
@@ -41,6 +47,7 @@ def send_processes(processes, hostname=None, agent_id=None):
         response = requests.post(
             f"{SERVER_URL}{PROCESS_ENDPOINT}",
             json=payload,
+            headers=_agent_headers(),
             timeout=10,
         )
 
@@ -60,6 +67,7 @@ def send_usb_event(event):
         response = requests.post(
             f"{SERVER_URL}{USB_ENDPOINT}",
             json=event,
+            headers=_agent_headers(),
             timeout=5,
         )
 

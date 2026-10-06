@@ -1,5 +1,7 @@
 # 🎉 SENTINEL AI - PROJECT COMPLETION SUMMARY
 
+> Historical project notes. Runtime status and deployment instructions can change; see the root README and CI workflow for the current state.
+
 ## ✅ ALL ISSUES FIXED & DEPLOYED
 
 ### System Status: OPERATIONAL ✅

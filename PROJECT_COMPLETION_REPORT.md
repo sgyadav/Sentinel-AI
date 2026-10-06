@@ -1,4 +1,6 @@
-# 🎉 SENTINEL AI v1.0 - COMPLETE IMPLEMENTATION REPORT
+# Historical SENTINEL AI v1.0 implementation report
+
+> The claims below were recorded in an earlier project snapshot and are not current deployment or test evidence. Use the root README and CI workflow for current setup and verification.
 
 ## 📊 PROJECT STATUS: 100% COMPLETE ✅
 
@@ -399,7 +401,7 @@ python agent/agent.py
 
 ### Default Credentials
 - Username: `admin`
-- Password: `Admin1234`
+- Admin password: set through the deployment environment
 
 ### Windows Installation
 ```bash
@@ -505,7 +507,7 @@ net stop SentinelAIAgent
 4. **Run frontend**: `npm run dev` (from frontend dir)
 5. **Run tests**: `python tests/production_test.py`
 6. **Access**: http://localhost:5173
-7. **Credentials**: admin / Admin1234
+7. **Credentials**: use the admin password configured for the deployment
 
 ---
 

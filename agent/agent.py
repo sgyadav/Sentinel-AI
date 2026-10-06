@@ -56,6 +56,7 @@ DEFAULT_CONFIG = {
     "max_retries": 3,
     "retry_delay": 5,
     "agent_id": "GENERATE_NEW",
+    "agent_token": "",
     "agent_version": "1.0.0"
 }
 
@@ -359,6 +360,11 @@ class SentinelAPIClient:
         self.server_url = normalize_server_url(config['server_url'])
         self.config['server_url'] = self.server_url
         self.session = requests.Session()
+        agent_token = os.getenv("SENTINEL_AGENT_TOKEN") or config.get("agent_token", "")
+        if agent_token:
+            self.session.headers["Authorization"] = f"Bearer {agent_token}"
+        else:
+            logger.error("No agent token configured; set SENTINEL_AGENT_TOKEN or agent_token in %s", CONFIG_FILE)
         self.retry_count = 0
 
     def send_heartbeat(self, system_info):

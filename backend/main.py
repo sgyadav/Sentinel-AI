@@ -22,15 +22,18 @@ import io
 import json
 import os
 import re
-import sqlite3
+import time
 from datetime import datetime, timedelta, time as dt_time, timezone
 from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, text, or_, func
-from sqlalchemy.orm import sessionmaker, Session
-import hashlib
+from auth.password import hash_password, verify_password
+from auth.jwt_handler import create_access_token, verify_access_token
+from core.security import get_current_admin, get_current_agent, refresh_user_claims
+from database import engine, SessionLocal, get_db
+from sqlalchemy import inspect as sqlalchemy_inspect, text, or_, func
+from sqlalchemy.orm import Session
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -48,41 +51,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============= DATABASE SETUP =============
-BASE_DIR = Path(__file__).resolve().parent
-DATABASE_PATH = BASE_DIR / "sentinel.db"
-DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 HEARTBEAT_ONLINE_SECONDS = 30
 DEFAULT_ORG_ID = "default"
 LOCAL_TZ = timezone(timedelta(hours=5, minutes=30), "IST")
 
 
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 # ============= FASTAPI APP =============
 app = FastAPI(title="SENTINEL AI", version="1.0.0")
 
+_configured_origins = (
+    os.getenv("SENTINEL_CORS_ORIGINS")
+    or os.getenv("CORS_ORIGINS")
+    or os.getenv("FRONTEND_URL")
+    or ""
+)
+ALLOWED_ORIGINS = [origin.strip().rstrip("/") for origin in _configured_origins.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
 # ============= UTILITIES =============
-def hash_password(password: str) -> str:
-    return "sha256:" + hashlib.sha256(password.encode()).hexdigest()
 
 
 def parse_datetime(value):
@@ -300,13 +295,25 @@ def log_audit(db: Session, action: str, resource_type: str = "", resource_id: st
 class RealtimeHub:
     def __init__(self):
         self.clients = set()
+        self.client_users = {}
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, username: str, subprotocol=None):
+        await websocket.accept(subprotocol=subprotocol)
         self.clients.add(websocket)
+        self.client_users[websocket] = username
 
     def disconnect(self, websocket: WebSocket):
         self.clients.discard(websocket)
+        self.client_users.pop(websocket, None)
+
+    async def disconnect_user(self, username: str):
+        for client, client_username in list(self.client_users.items()):
+            if client_username == username:
+                try:
+                    await client.close(code=1008, reason="Session revoked")
+                except Exception:
+                    pass
+                self.disconnect(client)
 
     async def broadcast(self, message: dict):
         stale = []
@@ -336,70 +343,76 @@ def publish_realtime(event_type: str, payload: dict):
 
 
 def ensure_schema():
-    """Apply additive SQLite migrations for older local databases."""
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
-    try:
-        cursor = conn.cursor()
-        table_columns = {}
-        for (table_name,) in cursor.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
-            table_columns[table_name] = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})").fetchall()}
+    """Apply additive migrations to existing tables across supported SQL dialects."""
+    if engine.dialect.name == "sqlite" and engine.url.database not in (None, ":memory:"):
+        Path(engine.url.database).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
-        def add_column(table, column, definition):
-            if table in table_columns and column not in table_columns[table]:
-                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-                table_columns[table].add(column)
+    inspector = sqlalchemy_inspect(engine)
+    table_columns = {
+        table_name: {column["name"] for column in inspector.get_columns(table_name)}
+        for table_name in inspector.get_table_names()
+    }
+    migrations = {
+        "devices": {
+            "device_id": "TEXT",
+            "device_type": "TEXT DEFAULT 'Laptop'",
+            "os_version": "TEXT DEFAULT ''",
+        },
+        "processes": {
+            "agent_id": "TEXT DEFAULT ''",
+            "classification": "TEXT DEFAULT 'Safe'",
+            "risk_score": "REAL DEFAULT 0",
+            "reason": "TEXT DEFAULT ''",
+        },
+        "usb_events": {"agent_id": "TEXT DEFAULT ''"},
+        "threats": {
+            "org_id": "TEXT DEFAULT 'default'",
+            "confidence": "REAL DEFAULT 0",
+            "detection_method": "TEXT DEFAULT ''",
+            "file_path": "TEXT DEFAULT ''",
+            "file_hash": "TEXT DEFAULT ''",
+            "action_taken": "TEXT DEFAULT ''",
+            "resolved_at": "TIMESTAMP",
+            "created_at": "TIMESTAMP",
+        },
+        "users": {"token_version": "INTEGER NOT NULL DEFAULT 0"},
+    }
 
-        add_column("devices", "device_id", "TEXT")
-        add_column("devices", "device_type", "TEXT DEFAULT 'Laptop'")
-        add_column("devices", "os_version", "TEXT DEFAULT ''")
-        add_column("processes", "agent_id", "TEXT DEFAULT ''")
-        add_column("processes", "classification", "TEXT DEFAULT 'Safe'")
-        add_column("processes", "risk_score", "REAL DEFAULT 0")
-        add_column("processes", "reason", "TEXT DEFAULT ''")
-        add_column("usb_events", "agent_id", "TEXT DEFAULT ''")
-        add_column("threats", "org_id", "TEXT DEFAULT 'default'")
-        add_column("threats", "confidence", "REAL DEFAULT 0")
-        add_column("threats", "detection_method", "TEXT DEFAULT ''")
-        add_column("threats", "file_path", "TEXT DEFAULT ''")
-        add_column("threats", "file_hash", "TEXT DEFAULT ''")
-        add_column("threats", "action_taken", "TEXT DEFAULT ''")
-        add_column("threats", "resolved_at", "DATETIME")
-        add_column("threats", "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP")
+    with engine.begin() as connection:
+        for table_name, columns in migrations.items():
+            if table_name not in table_columns:
+                continue
+            for column_name, definition in columns.items():
+                if column_name not in table_columns[table_name]:
+                    connection.execute(text(
+                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+                    ))
+                    table_columns[table_name].add(column_name)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS endpoint_sessions (
-                id INTEGER PRIMARY KEY,
-                agent_id VARCHAR(255) NOT NULL,
-                hostname VARCHAR(255) NOT NULL,
-                username VARCHAR(255) NOT NULL,
-                ip_address VARCHAR(45) DEFAULT '',
-                login_time DATETIME NOT NULL,
-                logout_time DATETIME,
-                session_duration INTEGER,
-                status VARCHAR(50) DEFAULT 'Active',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS audit_logs (
-                id INTEGER PRIMARY KEY,
-                actor VARCHAR(255) DEFAULT 'system',
-                action VARCHAR(255) NOT NULL,
-                resource_type VARCHAR(100) DEFAULT '',
-                resource_id VARCHAR(255) DEFAULT '',
-                details TEXT DEFAULT '',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("UPDATE devices SET device_type = COALESCE(device_type, 'Laptop')")
-        cursor.execute("UPDATE devices SET os_version = COALESCE(os_version, '')")
-        cursor.execute("UPDATE devices SET device_id = 'AGT-' || printf('%05d', id) WHERE device_id IS NULL OR TRIM(device_id) = ''")
-        if "processes" in table_columns:
-            cursor.execute("DELETE FROM processes WHERE name IS NULL OR TRIM(name) = ''")
-        conn.commit()
-    finally:
-        conn.close()
+        if "devices" in table_columns:
+            connection.execute(text(
+                "UPDATE devices SET device_type = COALESCE(device_type, 'Laptop')"
+            ))
+            connection.execute(text(
+                "UPDATE devices SET os_version = COALESCE(os_version, '')"
+            ))
+            missing_ids = connection.execute(text(
+                "SELECT id FROM devices WHERE device_id IS NULL OR TRIM(device_id) = ''"
+            )).fetchall()
+            for (device_pk,) in missing_ids:
+                connection.execute(
+                    text("UPDATE devices SET device_id = :device_id WHERE id = :device_pk"),
+                    {"device_id": f"AGT-{device_pk:05d}", "device_pk": device_pk},
+                )
+
+        if "threats" in table_columns and "created_at" in table_columns["threats"]:
+            connection.execute(text(
+                "UPDATE threats SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
+            ))
+        if "processes" in table_columns and "name" in table_columns["processes"]:
+            connection.execute(text(
+                "DELETE FROM processes WHERE name IS NULL OR TRIM(name) = ''"
+            ))
 
 
 # ============= STARTUP =============
@@ -415,16 +428,25 @@ def startup():
         # Create admin user if not exists
         admin = db.query(UserDB).filter(UserDB.username == "admin").first()
         if not admin:
+            initial_password = (
+                os.getenv("SENTINEL_INITIAL_ADMIN_PASSWORD")
+                or os.getenv("INITIAL_ADMIN_PASSWORD")
+                or os.getenv("ADMIN_PASSWORD")
+            )
+            if not initial_password:
+                logger.warning("Admin account not seeded: configure SENTINEL_INITIAL_ADMIN_PASSWORD")
+                update_endpoint_statuses(db)
+                return
             admin_user = UserDB(
                 username="admin",
                 email="admin@sentinelai.local",
-                password=hash_password("Admin1234"),
+                password=hash_password(initial_password),
                 role="Admin",
                 is_active=True
             )
             db.add(admin_user)
             db.commit()
-            logger.info("Admin user created: username=admin, password=Admin1234")
+            logger.info("Initial admin account created")
         update_endpoint_statuses(db)
     except Exception as e:
         logger.error(f"Startup error: {str(e)}")
@@ -444,6 +466,8 @@ def health():
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     username = (request.username or "").strip()
     password = request.password or ""
+    if len(password) > 128:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     logger.info(f"Login attempt for user: {username}")
     user = db.query(UserDB).filter(UserDB.username == username).first()
 
@@ -458,23 +482,25 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    hashed_input = hash_password(password)
     stored_password = user.password or ""
 
-    if stored_password != hashed_input:
-        if stored_password == password:
-            user.password = hashed_input
-            logger.info(f"Upgraded legacy password storage for user: {username}")
-        else:
-            logger.error(f"Password mismatch for user: {username}")
-            db.add(LoginHistoryDB(
-                username=username,
-                ip_address="0.0.0.0",
-                status="Failed",
-                reason="Invalid password"
-            ))
-            db.commit()
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+    password_matches = bool(password) and (
+        verify_password(password, stored_password) or stored_password == password
+    )
+    if not password_matches:
+        logger.warning("Login rejected for user: %s", username)
+        db.add(LoginHistoryDB(
+            username=username,
+            ip_address="0.0.0.0",
+            status="Failed",
+            reason="Invalid password"
+        ))
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not stored_password.startswith("pbkdf2_sha256$"):
+        user.password = hash_password(password)
+        logger.info("Upgraded legacy password hash for user: %s", username)
 
     if not user.is_active:
         logger.error(f"Inactive user login blocked: {username}")
@@ -486,6 +512,19 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         ))
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    try:
+        access_token = create_access_token({
+            "sub": user.username,
+            "role": user.role,
+            "ver": user.token_version or 0,
+        })
+    except RuntimeError:
+        logger.error("JWT secret is not configured; login is unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured",
+        )
 
     db.add(LoginHistoryDB(
         username=user.username,
@@ -499,31 +538,43 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     logger.info(f"User {username} logged in successfully")
     return {
         "success": True,
-        "access_token": f"token_{user.username}_{int(datetime.now().timestamp())}",
+        "access_token": access_token,
         "user": {"username": user.username, "role": user.role, "email": user.email}
     }
 
 
-@app.post("/auth/logout")
-def logout(username: str = Body("admin", embed=True), db: Session = Depends(get_db)):
-    last_login = db.query(LoginHistoryDB).filter(
+@app.post("/auth/logout", dependencies=[Depends(get_current_admin)])
+async def logout(
+    username: str = Body("admin", embed=True),
+    current_admin: dict = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    username = current_admin["sub"]
+    user = db.query(UserDB).filter(UserDB.username == username).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
+    # A per-user version invalidates all outstanding tokens for this account,
+    # including copies held by another browser or device.
+    user.token_version = (user.token_version or 0) + 1
+    open_logins = db.query(LoginHistoryDB).filter(
         LoginHistoryDB.username == username,
         LoginHistoryDB.status == "Success",
         LoginHistoryDB.logout_time == None
-    ).order_by(LoginHistoryDB.login_time.desc()).first()
-    if last_login:
-        now = datetime.utcnow()
+    ).all()
+    now = datetime.utcnow()
+    for last_login in open_logins:
         last_login.logout_time = now
         login_time = parse_datetime(last_login.login_time) or now
-        last_login.session_duration = int((now - login_time).total_seconds())
+        last_login.session_duration = max(0, int((now - login_time).total_seconds()))
     log_audit(db, "Admin Logout", "user", username, actor=username)
     db.commit()
+    await realtime_hub.disconnect_user(username)
     publish_realtime("audit", {"action": "Admin Logout", "username": username})
     return {"success": True, "message": "Logged out"}
 
 
 # ============= EMPLOYEE ENDPOINTS =============
-@app.post("/employees")
+@app.post("/employees", dependencies=[Depends(get_current_admin)])
 def create_employee(emp: EmployeeCreate, db: Session = Depends(get_db)):
     try:
         existing = db.query(EmployeeDB).filter(EmployeeDB.employee_id == emp.employee_id).first()
@@ -546,7 +597,7 @@ def create_employee(emp: EmployeeCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/employees")
+@app.get("/employees", dependencies=[Depends(get_current_admin)])
 def get_employees(db: Session = Depends(get_db)):
     employees = db.query(EmployeeDB).all()
     return {
@@ -566,7 +617,7 @@ def get_employees(db: Session = Depends(get_db)):
     }
 
 
-@app.put("/employees/{employee_id}")
+@app.put("/employees/{employee_id}", dependencies=[Depends(get_current_admin)])
 def update_employee(employee_id: str, emp: EmployeeCreate, db: Session = Depends(get_db)):
     employee = db.query(EmployeeDB).filter(EmployeeDB.employee_id == employee_id).first()
     if not employee:
@@ -583,7 +634,7 @@ def update_employee(employee_id: str, emp: EmployeeCreate, db: Session = Depends
     return {"success": True, "message": "Employee updated"}
 
 
-@app.delete("/employees/{employee_id}")
+@app.delete("/employees/{employee_id}", dependencies=[Depends(get_current_admin)])
 def delete_employee(employee_id: str, db: Session = Depends(get_db)):
     employee = db.query(EmployeeDB).filter(EmployeeDB.employee_id == employee_id).first()
     if not employee:
@@ -597,7 +648,7 @@ def delete_employee(employee_id: str, db: Session = Depends(get_db)):
 
 
 # ============= DEVICE ENDPOINTS =============
-@app.post("/devices")
+@app.post("/devices", dependencies=[Depends(get_current_admin)])
 def create_device(dev: DeviceCreate, db: Session = Depends(get_db)):
     try:
         requested_id = normalize_agent_id(dev.device_id)
@@ -649,7 +700,7 @@ def create_device(dev: DeviceCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/devices")
+@app.get("/devices", dependencies=[Depends(get_current_admin)])
 def get_devices(
     search: str = Query("", description="Search hostname, employee, department, IP, or agent ID"),
     db: Session = Depends(get_db)
@@ -713,7 +764,7 @@ def get_devices(
     }
 
 
-@app.put("/devices/{device_id}")
+@app.put("/devices/{device_id}", dependencies=[Depends(get_current_admin)])
 def update_device(device_id: str, dev: DeviceCreate, db: Session = Depends(get_db)):
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
     if not device:
@@ -733,7 +784,7 @@ def update_device(device_id: str, dev: DeviceCreate, db: Session = Depends(get_d
     return {"success": True, "message": "Device updated"}
 
 
-@app.delete("/devices/{device_id}")
+@app.delete("/devices/{device_id}", dependencies=[Depends(get_current_admin)])
 def delete_device(device_id: str, db: Session = Depends(get_db)):
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
     if not device:
@@ -747,7 +798,7 @@ def delete_device(device_id: str, db: Session = Depends(get_db)):
 
 
 # ============= ASSIGNMENT ENDPOINTS =============
-@app.post("/assignments")
+@app.post("/assignments", dependencies=[Depends(get_current_admin)])
 def create_assignment(assign: AssignmentCreate, db: Session = Depends(get_db)):
     try:
         employee = db.query(EmployeeDB).filter(EmployeeDB.employee_id == assign.employee_id).first()
@@ -777,7 +828,7 @@ def create_assignment(assign: AssignmentCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/assignments")
+@app.get("/assignments", dependencies=[Depends(get_current_admin)])
 def get_assignments(db: Session = Depends(get_db)):
     assignments = db.query(AssignmentDB).all()
     return {
@@ -795,7 +846,7 @@ def get_assignments(db: Session = Depends(get_db)):
     }
 
 
-@app.put("/assignments/{assignment_id}")
+@app.put("/assignments/{assignment_id}", dependencies=[Depends(get_current_admin)])
 def update_assignment(
     assignment_id: int,
     assignment: AssignmentUpdate,
@@ -819,7 +870,7 @@ def update_assignment(
     return {"success": True, "message": "Assignment updated successfully"}
 
 
-@app.delete("/assignments/{assignment_id}")
+@app.delete("/assignments/{assignment_id}", dependencies=[Depends(get_current_admin)])
 def delete_assignment(assignment_id: int, db: Session = Depends(get_db)):
     assignment = db.query(AssignmentDB).filter(AssignmentDB.id == assignment_id).first()
 
@@ -834,7 +885,7 @@ def delete_assignment(assignment_id: int, db: Session = Depends(get_db)):
 
 
 # ============= THREAT ENDPOINTS =============
-@app.get("/threats")
+@app.get("/threats", dependencies=[Depends(get_current_admin)])
 def get_threats(db: Session = Depends(get_db)):
     threats = db.query(ThreatDB).all()
     return {
@@ -855,7 +906,7 @@ def get_threats(db: Session = Depends(get_db)):
     }
 
 
-@app.delete("/threats/clear")
+@app.delete("/threats/clear", dependencies=[Depends(get_current_admin)])
 def clear_threats(admin: str = Query("admin"), db: Session = Depends(get_db)):
     try:
         count = db.query(ThreatDB).count()
@@ -871,7 +922,7 @@ def clear_threats(admin: str = Query("admin"), db: Session = Depends(get_db)):
 
 
 # ============= HEARTBEAT ENDPOINT =============
-@app.post("/heartbeat")
+@app.post("/heartbeat", dependencies=[Depends(get_current_agent)])
 def heartbeat(data: Heartbeat, db: Session = Depends(get_db)):
     try:
         incoming_agent_id = normalize_agent_id(data.agent_id or data.device_uuid)
@@ -956,7 +1007,7 @@ def heartbeat(data: Heartbeat, db: Session = Depends(get_db)):
 
 
 # ============= PROCESS ENDPOINTS =============
-@app.post("/processes")
+@app.post("/processes", dependencies=[Depends(get_current_agent)])
 def receive_processes(payload=Body(...), db: Session = Depends(get_db)):
     try:
         if isinstance(payload, dict):
@@ -1021,7 +1072,7 @@ def receive_processes(payload=Body(...), db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/processes/live")
+@app.get("/processes/live", dependencies=[Depends(get_current_admin)])
 def get_live_processes(
     hostname: str = None,
     agent_id: str = None,
@@ -1067,7 +1118,7 @@ def get_live_processes(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/processes/clear")
+@app.delete("/processes/clear", dependencies=[Depends(get_current_admin)])
 def clear_processes(admin: str = Query("admin"), db: Session = Depends(get_db)):
     try:
         count = db.query(ProcessDB).count()
@@ -1083,7 +1134,7 @@ def clear_processes(admin: str = Query("admin"), db: Session = Depends(get_db)):
 
 
 # ============= USB EVENTS ENDPOINTS =============
-@app.post("/usb-events")
+@app.post("/usb-events", dependencies=[Depends(get_current_agent)])
 def receive_usb_event(event: dict, db: Session = Depends(get_db)):
     try:
         usb = USBEventDB(
@@ -1125,7 +1176,7 @@ def receive_usb_event(event: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/usb-events")
+@app.get("/usb-events", dependencies=[Depends(get_current_admin)])
 def get_usb_events(
     period: str = Query("today", description="today, yesterday, last7, last_month, custom, all"),
     days: int = 1,
@@ -1175,7 +1226,7 @@ def get_usb_events(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/usb-events/clear")
+@app.delete("/usb-events/clear", dependencies=[Depends(get_current_admin)])
 def clear_usb_events(admin: str = Query("admin"), db: Session = Depends(get_db)):
     try:
         count = db.query(USBEventDB).count()
@@ -1191,7 +1242,7 @@ def clear_usb_events(admin: str = Query("admin"), db: Session = Depends(get_db))
 
 
 # ============= DASHBOARD ENDPOINT =============
-@app.get("/dashboard")
+@app.get("/dashboard", dependencies=[Depends(get_current_admin)])
 def get_dashboard(db: Session = Depends(get_db)):
     try:
         update_endpoint_statuses(db)
@@ -1228,7 +1279,7 @@ def get_dashboard(db: Session = Depends(get_db)):
 
 
 # ============= EMPLOYEE MONITORING ENDPOINT =============
-@app.get("/employee-monitoring")
+@app.get("/employee-monitoring", dependencies=[Depends(get_current_admin)])
 def get_employee_monitoring(db: Session = Depends(get_db)):
     try:
         employees = db.query(EmployeeDB).all()
@@ -1266,7 +1317,7 @@ def get_employee_monitoring(db: Session = Depends(get_db)):
 
 
 # ============= LOGIN / LOGOUT MONITORING =============
-@app.post("/endpoint-sessions")
+@app.post("/endpoint-sessions", dependencies=[Depends(get_current_agent)])
 def receive_endpoint_session(event: EndpointSessionEvent, db: Session = Depends(get_db)):
     try:
         agent_id = normalize_agent_id(event.agent_id)
@@ -1360,7 +1411,7 @@ def receive_endpoint_session(event: EndpointSessionEvent, db: Session = Depends(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/login-events")
+@app.get("/login-events", dependencies=[Depends(get_current_admin)])
 def get_login_events(
     agent_id: str = "",
     hostname: str = "",
@@ -1412,7 +1463,7 @@ def get_login_events(
 
 
 # ============= ENDPOINT DETAILS / TIMELINE =============
-@app.get("/devices/{device_id}/details")
+@app.get("/devices/{device_id}/details", dependencies=[Depends(get_current_admin)])
 def get_device_details(device_id: str, db: Session = Depends(get_db)):
     update_endpoint_statuses(db)
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
@@ -1457,7 +1508,7 @@ def get_device_details(device_id: str, db: Session = Depends(get_db)):
     }
 
 
-@app.get("/devices/{device_id}/timeline")
+@app.get("/devices/{device_id}/timeline", dependencies=[Depends(get_current_admin)])
 def get_device_timeline(device_id: str, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)):
     device = db.query(DeviceDB).filter(DeviceDB.device_id == device_id).first()
     if not device:
@@ -1514,7 +1565,7 @@ def get_device_timeline(device_id: str, limit: int = Query(100, ge=1, le=500), d
     }
 
 
-@app.get("/audit-logs")
+@app.get("/audit-logs", dependencies=[Depends(get_current_admin)])
 def get_audit_logs(limit: int = Query(200, ge=1, le=1000), db: Session = Depends(get_db)):
     logs = db.query(AuditLogDB).order_by(AuditLogDB.created_at.desc()).limit(limit).all()
     return {
@@ -1566,7 +1617,7 @@ def report_rows(report_type: str, db: Session):
     raise HTTPException(status_code=404, detail="Unknown report type")
 
 
-@app.get("/reports/{report_type}/csv")
+@app.get("/reports/{report_type}/csv", dependencies=[Depends(get_current_admin)])
 def export_csv_report(report_type: str, db: Session = Depends(get_db)):
     headers, rows = report_rows(report_type, db)
     output = io.StringIO()
@@ -1581,7 +1632,7 @@ def export_csv_report(report_type: str, db: Session = Depends(get_db)):
     )
 
 
-@app.get("/reports/{report_type}/pdf")
+@app.get("/reports/{report_type}/pdf", dependencies=[Depends(get_current_admin)])
 def export_pdf_report(report_type: str, db: Session = Depends(get_db)):
     if not REPORTLAB_AVAILABLE:
         raise HTTPException(status_code=500, detail="ReportLab is not installed")
@@ -1616,7 +1667,7 @@ def export_pdf_report(report_type: str, db: Session = Depends(get_db)):
 
 
 # ============= SETTINGS ENDPOINTS =============
-@app.get("/settings")
+@app.get("/settings", dependencies=[Depends(get_current_admin)])
 def get_settings(db: Session = Depends(get_db)):
     try:
         settings = db.query(SettingsDB).all()
@@ -1633,7 +1684,7 @@ def get_settings(db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/settings")
+@app.post("/settings", dependencies=[Depends(get_current_admin)])
 def update_settings(settings: SettingsUpdate, db: Session = Depends(get_db)):
     try:
         db.query(SettingsDB).delete()
@@ -1661,7 +1712,7 @@ def update_settings(settings: SettingsUpdate, db: Session = Depends(get_db)):
 
 
 # ============= EMAIL ENDPOINTS =============
-@app.post("/test-email")
+@app.post("/test-email", dependencies=[Depends(get_current_admin)])
 def test_email(request: SendEmailRequest, db: Session = Depends(get_db)):
     try:
         settings = db.query(SettingsDB).all()
@@ -1695,7 +1746,7 @@ def test_email(request: SendEmailRequest, db: Session = Depends(get_db)):
         return {"success": False, "message": str(e)}
 
 
-@app.post("/send-email")
+@app.post("/send-email", dependencies=[Depends(get_current_admin)])
 def send_email_notification(request: SendEmailRequest, db: Session = Depends(get_db)):
     try:
         settings = db.query(SettingsDB).all()
@@ -1740,7 +1791,7 @@ def send_email_notification(request: SendEmailRequest, db: Session = Depends(get
         return {"success": False, "message": str(e)}
 
 
-@app.get("/notifications")
+@app.get("/notifications", dependencies=[Depends(get_current_admin)])
 def get_notifications(db: Session = Depends(get_db)):
     try:
         notifications = db.query(NotificationDB).order_by(
@@ -1768,7 +1819,26 @@ def get_notifications(db: Session = Depends(get_db)):
 # ============= REALTIME WEBSOCKET =============
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await realtime_hub.connect(websocket)
+    auth_protocol = next(
+        (value for value in websocket.scope.get("subprotocols", []) if value.startswith("bearer.")),
+        None,
+    )
+    token = auth_protocol.removeprefix("bearer.") if auth_protocol else ""
+    claims = verify_access_token(token) if token else None
+    if claims:
+        with SessionLocal() as db:
+            claims = refresh_user_claims(claims, db)
+    if not claims or claims.get("role") not in ("Admin", "SuperAdmin"):
+        await websocket.close(code=1008)
+        return
+
+    await realtime_hub.connect(
+        websocket,
+        username=claims["sub"],
+        subprotocol="sentinel-auth",
+    )
+    expires_at = float(claims.get("exp", 0))
+    next_token_check = time.monotonic() + 30
     try:
         await websocket.send_json({
             "type": "connected",
@@ -1776,7 +1846,28 @@ async def websocket_endpoint(websocket: WebSocket):
             "message": "SENTINEL AI realtime monitoring connected"
         })
         while True:
-            message = await websocket.receive_text()
+            remaining = expires_at - time.time()
+            if remaining <= 0:
+                await websocket.close(code=1008, reason="Session expired")
+                break
+            until_token_check = next_token_check - time.monotonic()
+            if until_token_check <= 0:
+                with SessionLocal() as db:
+                    current_claims = refresh_user_claims(dict(claims), db)
+                if not current_claims or current_claims.get("role") not in ("Admin", "SuperAdmin"):
+                    await websocket.close(code=1008, reason="Session revoked")
+                    break
+                next_token_check = time.monotonic() + 30
+                continue
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=min(until_token_check, remaining),
+                )
+            except asyncio.TimeoutError:
+                # Re-enter the loop to check expiry or the persisted token
+                # version, even if this socket continues receiving messages.
+                continue
             if message.lower() == "ping":
                 await websocket.send_json({"type": "pong", "timestamp": datetime.utcnow().isoformat()})
     except WebSocketDisconnect:
@@ -1785,7 +1876,7 @@ async def websocket_endpoint(websocket: WebSocket):
         realtime_hub.disconnect(websocket)
 
 
-@app.get("/realtime/status")
+@app.get("/realtime/status", dependencies=[Depends(get_current_admin)])
 def realtime_status():
     return {
         "realtime_enabled": True,

@@ -1,4 +1,7 @@
-SERVER_URL = "https://sentinel-ai-fz5u.onrender.com"
+import os
+
+SERVER_URL = os.getenv("SENTINEL_SERVER_URL", "https://sentinel-ai-fz5u.onrender.com").rstrip("/")
+AGENT_TOKEN = os.getenv("SENTINEL_AGENT_TOKEN", "")
 
 HEARTBEAT_ENDPOINT = "/heartbeat"
 

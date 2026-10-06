@@ -1,8 +1,16 @@
 """Application configuration management"""
 
 import os
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+
+def normalize_database_url(database_url: str) -> str:
+    """Accept the legacy Render `postgres://` scheme and normalize it for SQLAlchemy."""
+    if database_url.startswith("postgres://"):
+        return "postgresql://" + database_url.removeprefix("postgres://")
+    return database_url
 
 
 class Settings(BaseSettings):
@@ -14,10 +22,12 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # Database - Use local path on Windows
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./sentinel.db")
+    DATABASE_URL: str = normalize_database_url(
+        os.getenv("DATABASE_URL", "sqlite:///./sentinel.db")
+    )
     
     # JWT Configuration
-    SECRET_KEY: str = "your-secret-key-change-in-production-minimum-32-chars"
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -37,6 +47,11 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = "ignore"
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def normalize_database_url_setting(cls, value: str) -> str:
+        return normalize_database_url(value)
 
 
 @lru_cache()

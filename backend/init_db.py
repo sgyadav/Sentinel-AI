@@ -9,9 +9,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
 from auth.password import hash_password
+from core.config import normalize_database_url
 
-DATABASE_URL = "sqlite:///./sentinel.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./sentinel.db"))
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Simple Base for initialization
@@ -43,8 +47,16 @@ def init_database():
                 print("[OK] Admin user already exists")
                 return
             
-            # Create admin
-            hashed_password = hash_password("Admin1234")
+            # Create admin only when an operator explicitly supplies a password.
+            initial_password = (
+                os.getenv("SENTINEL_INITIAL_ADMIN_PASSWORD")
+                or os.getenv("INITIAL_ADMIN_PASSWORD")
+                or os.getenv("ADMIN_PASSWORD")
+            )
+            if not initial_password:
+                print("[ERROR] Set SENTINEL_INITIAL_ADMIN_PASSWORD before creating the admin account")
+                return
+            hashed_password = hash_password(initial_password)
             admin_user = UserSimple(
                 username="admin",
                 email="admin@sentinelai.local",
@@ -57,7 +69,7 @@ def init_database():
             db.commit()
             print("[OK] Admin user created successfully")
             print("[INFO] Username: admin")
-            print("[INFO] Password: Admin1234")
+            print("[INFO] Set the admin password through the deployment environment")
             
         except Exception as e:
             print(f"[ERROR] Error creating admin user: {str(e)}")
